@@ -12,7 +12,7 @@
  * \param now - system tick continuously running
  * 
  */
-void timer_check(soft_timer_t *obj, uint32_t now)
+void timerCheck(soft_timer_t *obj, uint32_t now)
 {
 	if(obj->in)
 	{
@@ -41,7 +41,7 @@ void timer_check(soft_timer_t *obj, uint32_t now)
  * \param s
  * \param interval
  */
-void timer_start(soft_timer_t *obj)
+void timerStart(soft_timer_t *obj)
 {
 	obj->in = 1;
 }
@@ -51,7 +51,7 @@ void timer_start(soft_timer_t *obj)
  * \brief
  * \param s
  */
-void timer_stop(soft_timer_t *obj)
+void timerStop(soft_timer_t *obj)
 {
 	obj->in = 0;
 }
@@ -64,7 +64,7 @@ void timer_stop(soft_timer_t *obj)
 * 
 * @retval none
 **/
-void timer_set(soft_timer_t *obj, uint32_t interval, void(*fp)(void))
+void timerSet(soft_timer_t *obj, uint32_t interval, void(*fp)(void))
 {
 	obj->interval = interval;
 	obj->fp = fp;

@@ -358,14 +358,6 @@ int8_t disconnect(uint8_t sn)
       return SOCKERR_DEVICE;
    }
 
-//   while (getSn_SR(sn) != SOCK_CLOSED)
-//   {
-//      if(getSn_IR(sn) & Sn_IR_TIMEOUT)
-//      {
-//         close(sn);
-//         return SOCKERR_TIMEOUT;
-//      }
-//   }
    return SOCK_OK;
 }
 

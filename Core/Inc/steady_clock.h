@@ -10,7 +10,7 @@
 
 
 
-void dwt_enable(void);
+void dwtEnable(void);
 float getusec(void);
 
 #endif /* STEADY_CLOCK_H_ */

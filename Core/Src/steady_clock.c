@@ -8,7 +8,7 @@
 #include "steady_clock.h"
 #include "main.h"
 
-void dwt_enable(void)
+void dwtEnable(void)
 {
 //24.Bit TRCENA in Debug Exception and Monitor Control Register must be set before enable DWT
    CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk;

@@ -12,9 +12,9 @@ typedef struct
   uint32_t since;
 } soft_timer_t;
 
-void timer_check(soft_timer_t *obj, uint32_t now);
-void timer_start(soft_timer_t *obj);
-void timer_stop(soft_timer_t *obj);
-void timer_set(soft_timer_t *obj, uint32_t interval, void(*cb)(void));
+void timerCheck(soft_timer_t *obj, uint32_t now);
+void timerStart(soft_timer_t *obj);
+void timerStop(soft_timer_t *obj);
+void timerSet(soft_timer_t *obj, uint32_t interval, void(*cb)(void));
 
 #endif /* SOFT_TIMER_H */

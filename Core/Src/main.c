@@ -105,8 +105,8 @@ app_data_t app_net_data = {
 
 static soft_timer_t timer_obj[TIMER_END];
 
-volatile uint8_t spi_rx_done;
-volatile uint8_t spi_tx_done;
+volatile static uint8_t spi_rx_done;
+volatile static uint8_t spi_tx_done;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -115,9 +115,9 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
-static void setEthParams(void);
-static void setSockParams(void);
-static int8_t serverInit(void);
+static int8_t appServerStart(void);
+static void printInfo(void);
+
 
 static void appSendOk(uint8_t id, uint16_t len);
 static void appTimeout(uint8_t id, uint8_t discon);
@@ -126,6 +126,8 @@ static void appDiscon(uint8_t id);
 static void appCon(uint8_t id);
 static void appHardfault(uint8_t id);
 static void appLinkOff(void);
+static void appConflict(void);
+static void appUnreach(void);
 
 static void cs_sel(void);
 static void cs_desel(void);
@@ -135,10 +137,9 @@ static void spi_rb_burst_dma(uint8_t *rbuf, uint16_t len);
 static void spi_wb_burst_dma(uint8_t *tbuf, uint16_t len);
 
 
-static void printInfo(void);
 
 
-char buf[16384] = {0};
+uint8_t buf[16384] = {0};
 
 /* USER CODE END PFP */
 
@@ -182,28 +183,28 @@ int main(void)
 
 // RESET HIGH(active low 500 us)
    HAL_GPIO_WritePin(ETH_RST_GPIO_Port, ETH_RST_Pin, GPIO_PIN_RESET);
-   HAL_Delay(100);
+   HAL_Delay(10);
    HAL_GPIO_WritePin(ETH_RST_GPIO_Port, ETH_RST_Pin, GPIO_PIN_SET);
-   HAL_Delay(100);
+   HAL_Delay(10);
 
    reg_wizchip_cs_cbfunc(cs_sel, cs_desel);
    reg_wizchip_spiburst_cbfunc(spi_rb_burst_dma, spi_wb_burst_dma);
 
+
+   // ethInitDefault ilk çağrılmalı
+   ethInitDefault(&app_net_data.net_info);
+   setEthIntCallbacks(appConflict, appUnreach, NULL, NULL);
    setSockIntCallbacks(app_net_data.sn, appSendOk, appTimeout, appRecv, appDiscon, appCon);
-   setEthIntCallbacks(NULL, NULL, NULL, NULL);
    setSockIntErrCallbacks(app_net_data.sn, appHardfault);
-   ethIntErrCallbacks(appLinkOff);
+   setEthIntErrCallbacks(appLinkOff);
 
-   timer_set(&timer_obj[TIMER_0], TIMER_0_DURATION, checkEthHealth);
-
+   timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, ethObserver);
 
 
    while(!scan("%s", buf));
    print("%s\n", buf);
 
-   setEthParams();
-   setSockParams();
-   serverInit();
+   appServerStart();
 
    printInfo();
    print("CHIP-VERSION: %d\n"
@@ -220,9 +221,9 @@ int main(void)
          getSn_IMR(0), getSn_TXBUF_SIZE(0), getSn_RXBUF_SIZE(0),
          getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
 
-   timer_start(&timer_obj[TIMER_0]);
+   timerStart(&timer_obj[TIMER_0]);
 
-   dwt_enable();
+   dwtEnable();
 
    /* USER CODE END 2 */
 
@@ -233,18 +234,18 @@ int main(void)
    {
       sockDataHandler(app_net_data.sn);
 
-      if(getline(buf))
+      if(getline((char*)buf))
       {
-         if(!strcmp("init", buf))
-            serverInit();
-         else if(!strcmp("disconnect", buf))
+         if(!strcmp("init", (char*)buf))
+            appServerStart();
+         else if(!strcmp("disconnect", (char*)buf))
             disconnect(app_net_data.sn);
-         else if(!strcmp("send", buf))
+         else if(!strcmp("send", (char*)buf))
             send(0, (uint8_t*)"bir yazi", 9);
 
       }
 
-      timer_check(&timer_obj[TIMER_0], HAL_GetTick());
+      timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
       /* USER CODE END WHILE */
 
       /* USER CODE BEGIN 3 */
@@ -255,55 +256,14 @@ int main(void)
 /* USER CODE BEGIN 123 */
 
 
-
-static void setEthParams(void)
-{
-   uint8_t sock_buffer[] =
-   {16, 0, 0, 0, 0, 0, 0, 0};
-
-   wizchip_init(sock_buffer, sock_buffer);
-
-   wizchip_setnetinfo(&app_net_data.net_info);
-
-   wizchip_getnetinfo(&app_net_data.net_info);
-
-   /*
-    * INTLEVEL: int pin x saniye sonra low olur
-    *
-    * RTR-RCR -> TCP packet retransmission timeout
-    * 12.6 s (RCR = 4 -> 6.2 s)
-    * ARP retransmission timeout
-    * 1.2 s (RCR = 4 -> 1 s)
-    */
-   setINTLEVEL(50000);//0.0013 s
-   setIMR(IM_IR7 | IM_IR6);
-   setSIMR(0x01);
-   setRTR(2000);
-   setRCR(5);
-}
-
-static void setSockParams(void)
-{
-  /*
-   * IMR(IP Conflict ve Destination unreachable) - IR(yandakilerden hangisi)
-   * SIMR(S0_IMR enable) - SIR(S0_INT bak) - Sn_IR(SEND_OK, TIMEOUT, RECV, DISCON, CON)
-   * Sn_IMR(SEND_OK, TIMEOUT, RECV, DISCON, CON) - Sn_IR(yandakilerden hangisi)
-   *
-   * Clear için
-   * Sn_IR 1 yaz
-   * IR 1 yaz
-   */
-   setSn_IMR(app_net_data.sn, 0x1F);
-   setSn_KPALVTR(app_net_data.sn,1);//5sec
-}
-
-static int8_t serverInit(void)
+static int8_t appServerStart(void)
 {
    if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
    {
       print("socket %d cannot open\r\n", app_net_data.sn);
       return -1;
    }
+   enableKeepAliveAuto(app_net_data.sn, 1);
    print("Socket %d opened\r\n", app_net_data.sn);
 
    if(listen(app_net_data.sn) != SOCK_OK)
@@ -316,6 +276,24 @@ static int8_t serverInit(void)
    return 0;
 }
 
+void printInfo(void)
+{
+   print("---------------------\n");
+   print("Network configuration:\r\n");
+   print("IP ADDRESS:  %d.%d.%d.%d\r\n", app_net_data.net_info.ip[0], app_net_data.net_info.ip[1], app_net_data.net_info.ip[2], app_net_data.net_info.ip[3]);
+   print("NETMASK:     %d.%d.%d.%d\r\n", app_net_data.net_info.sn[0], app_net_data.net_info.sn[1], app_net_data.net_info.sn[2], app_net_data.net_info.sn[3]);
+   print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2], app_net_data.net_info.gw[3]);
+   print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2], app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
+   print("---------------------\n");
+}
+
+
+
+
+
+
+
+
 static void appSendOk(uint8_t id, uint16_t len)
 {
    print("------------------\n"
@@ -324,6 +302,7 @@ static void appSendOk(uint8_t id, uint16_t len)
          "------------------\n", id, len);
 }
 
+// kablo çıkarıldığında ayarlanan süre sonra timeout oluşur
 static void appTimeout(uint8_t id, uint8_t discon)
 {
    print("timeout occured!\n");
@@ -359,13 +338,25 @@ static void appCon(uint8_t id)
 
 static void appHardfault(uint8_t id)
 {
-   print("eth hardfault!\n");
+   print("hardfault!\n");
 }
 
 static void appLinkOff(void)
 {
    print("check the cable!\n");
 }
+
+static void appConflict(void)
+{
+   print("conflict!\n");
+}
+
+static void appUnreach(void)
+{
+   print("unreach!\n");
+}
+
+
 
 
 
@@ -416,18 +407,6 @@ void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
    spi_rx_done = 1;
 }
 
-
-
-void printInfo(void)
-{
-   print("---------------------\n");
-   print("Network configuration:\r\n");
-   print("IP ADDRESS:  %d.%d.%d.%d\r\n", app_net_data.net_info.ip[0], app_net_data.net_info.ip[1], app_net_data.net_info.ip[2], app_net_data.net_info.ip[3]);
-   print("NETMASK:     %d.%d.%d.%d\r\n", app_net_data.net_info.sn[0], app_net_data.net_info.sn[1], app_net_data.net_info.sn[2], app_net_data.net_info.sn[3]);
-   print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2], app_net_data.net_info.gw[3]);
-   print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2], app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
-   print("---------------------\n");
-}
 
 /* USER CODE END 123 */
 
