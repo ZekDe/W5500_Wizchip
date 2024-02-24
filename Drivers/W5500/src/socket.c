@@ -449,12 +449,10 @@ int32_t send(uint8_t sn, uint8_t *buf, uint16_t len)
    return (int32_t)len;
 }
 
-//first = getusec();
-//second = getusec();
-//result = second - first;
-//print("Send duration: %.2f us\n", result);
+
 int32_t recv(uint8_t sn, uint8_t *buf, uint16_t len)
 {
+   first = getusec();
    uint8_t tmp = 0;
    uint16_t recvsize = 0;
 
@@ -516,8 +514,9 @@ int32_t recv(uint8_t sn, uint8_t *buf, uint16_t len)
       return SOCKERR_DEVICE;
    }
 
-//M20150409 : Explicit Type Casting
-//return len;
+   second = getusec();
+   result = second - first;
+   print("Send duration: %.2f us\n", result);
    return (int32_t)len;
 }
 

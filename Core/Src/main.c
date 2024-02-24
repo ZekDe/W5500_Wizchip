@@ -253,162 +253,6 @@ int main(void)
    /* USER CODE END 3 */
 }
 
-/* USER CODE BEGIN 123 */
-
-
-static int8_t appServerStart(void)
-{
-   if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
-   {
-      print("socket %d cannot open\r\n", app_net_data.sn);
-      return -1;
-   }
-   enableKeepAliveAuto(app_net_data.sn, 1);
-   print("Socket %d opened\r\n", app_net_data.sn);
-
-   if(listen(app_net_data.sn) != SOCK_OK)
-   {
-      print("socket %d cannot listen\n");
-      return -1;
-   }
-   print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
-
-   return 0;
-}
-
-void printInfo(void)
-{
-   print("---------------------\n");
-   print("Network configuration:\r\n");
-   print("IP ADDRESS:  %d.%d.%d.%d\r\n", app_net_data.net_info.ip[0], app_net_data.net_info.ip[1], app_net_data.net_info.ip[2], app_net_data.net_info.ip[3]);
-   print("NETMASK:     %d.%d.%d.%d\r\n", app_net_data.net_info.sn[0], app_net_data.net_info.sn[1], app_net_data.net_info.sn[2], app_net_data.net_info.sn[3]);
-   print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2], app_net_data.net_info.gw[3]);
-   print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2], app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
-   print("---------------------\n");
-}
-
-
-
-
-
-
-
-
-static void appSendOk(uint8_t id, uint16_t len)
-{
-   print("------------------\n"
-         "Socket: %d\n"
-         "%d bytes data sent\n"
-         "------------------\n", id, len);
-}
-
-// kablo çıkarıldığında ayarlanan süre sonra timeout oluşur
-static void appTimeout(uint8_t id, uint8_t discon)
-{
-   print("timeout occured!\n");
-}
-
-static void appRecv(uint8_t id)
-{
-   int32_t size,ret;
-
-   size = getSn_RX_RSR(id);
-   ret = recv(id, buf, size);
-   print("------------------\n"
-         "received size: %d\n"
-         "ret: %d\n"
-         "data: %s\n"
-         "------------------\n", size, ret, buf);
-
-   print("Send return: %d\n", send(app_net_data.sn, buf, size));
-}
-
-static void appDiscon(uint8_t id)
-{
-   print("Socket %d disconnected\n", id);
-}
-
-static void appCon(uint8_t id)
-{
-   getSn_DIPR(id, app_net_data.destip);// client ip adresini al
-   app_net_data.destport = getSn_DPORT(id);
-   print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", id, app_net_data.destip[0], app_net_data.destip[1],
-                                                     app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
-}
-
-static void appHardfault(uint8_t id)
-{
-   print("hardfault!\n");
-}
-
-static void appLinkOff(void)
-{
-   print("check the cable!\n");
-}
-
-static void appConflict(void)
-{
-   print("conflict!\n");
-}
-
-static void appUnreach(void)
-{
-   print("unreach!\n");
-}
-
-
-
-
-
-
-void cs_sel(void)
-{
-   HAL_GPIO_WritePin(ETH_CS_GPIO_Port, ETH_CS_Pin, GPIO_PIN_RESET);//CS LOW
-}
-
-void cs_desel(void)
-{
-   HAL_GPIO_WritePin(ETH_CS_GPIO_Port, ETH_CS_Pin, GPIO_PIN_SET);//CS HIGH
-}
-
-static void spi_rb_burst_dma(uint8_t *rbuf, uint16_t len)
-{
-   HAL_SPI_Receive_DMA(&hspi2, rbuf, len);
-//HAL_DMA_PollForTransfer(&hdma_spi2_rx, HAL_DMA_FULL_TRANSFER, 5);
-   while (!spi_rx_done);
-   spi_rx_done = 0;
-}
-
-static void spi_wb_burst_dma(uint8_t *tbuf, uint16_t len)
-{
-   HAL_SPI_Transmit_DMA(&hspi2, tbuf, len);
-//HAL_DMA_PollForTransfer(&hdma_spi2_tx, HAL_DMA_FULL_TRANSFER, 5);
-   while (!spi_tx_done);
-   spi_tx_done = 0;
-}
-
-static void spi_rb_burst(uint8_t *rbuf, uint16_t len)
-{
-   HAL_SPI_Receive(&hspi2, rbuf, len, 100);
-}
-
-static void spi_wb_burst(uint8_t *tbuf, uint16_t len)
-{
-   HAL_SPI_Transmit(&hspi2, tbuf, len, 100);
-}
-
-void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-   spi_tx_done = 1;
-}
-
-void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
-{
-   spi_rx_done = 1;
-}
-
-
-/* USER CODE END 123 */
 
 /**
  * @brief System Clock Configuration
@@ -585,7 +429,156 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+static int8_t appServerStart(void)
+{
+   if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
+   {
+      print("socket %d cannot open\r\n", app_net_data.sn);
+      return -1;
+   }
+   enableKeepAliveAuto(app_net_data.sn, 1);
+   print("Socket %d opened\r\n", app_net_data.sn);
 
+   if(listen(app_net_data.sn) != SOCK_OK)
+   {
+      print("socket %d cannot listen\n");
+      return -1;
+   }
+   print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
+
+   return 0;
+}
+
+void printInfo(void)
+{
+   print("---------------------\n");
+   print("Network configuration:\r\n");
+   print("IP ADDRESS:  %d.%d.%d.%d\r\n", app_net_data.net_info.ip[0], app_net_data.net_info.ip[1], app_net_data.net_info.ip[2], app_net_data.net_info.ip[3]);
+   print("NETMASK:     %d.%d.%d.%d\r\n", app_net_data.net_info.sn[0], app_net_data.net_info.sn[1], app_net_data.net_info.sn[2], app_net_data.net_info.sn[3]);
+   print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2], app_net_data.net_info.gw[3]);
+   print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2], app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
+   print("---------------------\n");
+}
+
+
+
+
+
+
+
+
+static void appSendOk(uint8_t id, uint16_t len)
+{
+   print("------------------\n"
+         "Socket: %d\n"
+         "%d bytes data sent\n"
+         "------------------\n", id, len);
+}
+
+// kablo çıkarıldığında ayarlanan süre sonra timeout oluşur
+static void appTimeout(uint8_t id, uint8_t discon)
+{
+   print("timeout occured!\n");
+}
+
+static void appRecv(uint8_t id)
+{
+   int32_t size,ret;
+
+   size = getSn_RX_RSR(id);
+   ret = recv(id, buf, size);
+   print("------------------\n"
+         "received size: %d\n"
+         "ret: %d\n"
+         "data: %s\n"
+         "------------------\n", size, ret, buf);
+
+   print("Send return: %d\n", send(app_net_data.sn, buf, size));
+}
+
+static void appDiscon(uint8_t id)
+{
+   print("Socket %d disconnected\n", id);
+}
+
+static void appCon(uint8_t id)
+{
+   getSn_DIPR(id, app_net_data.destip);// client ip adresini al
+   app_net_data.destport = getSn_DPORT(id);
+   print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", id, app_net_data.destip[0], app_net_data.destip[1],
+                                                     app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
+}
+
+static void appHardfault(uint8_t id)
+{
+   print("hardfault!\n");
+}
+
+static void appLinkOff(void)
+{
+   print("check the cable!\n");
+}
+
+static void appConflict(void)
+{
+   print("conflict!\n");
+}
+
+static void appUnreach(void)
+{
+   print("unreach!\n");
+}
+
+
+
+
+
+
+void cs_sel(void)
+{
+   HAL_GPIO_WritePin(ETH_CS_GPIO_Port, ETH_CS_Pin, GPIO_PIN_RESET);//CS LOW
+}
+
+void cs_desel(void)
+{
+   HAL_GPIO_WritePin(ETH_CS_GPIO_Port, ETH_CS_Pin, GPIO_PIN_SET);//CS HIGH
+}
+
+static void spi_rb_burst_dma(uint8_t *rbuf, uint16_t len)
+{
+   HAL_SPI_Receive_DMA(&hspi2, rbuf, len);
+//HAL_DMA_PollForTransfer(&hdma_spi2_rx, HAL_DMA_FULL_TRANSFER, 5);
+   while (!spi_rx_done);
+   spi_rx_done = 0;
+}
+
+static void spi_wb_burst_dma(uint8_t *tbuf, uint16_t len)
+{
+   HAL_SPI_Transmit_DMA(&hspi2, tbuf, len);
+//HAL_DMA_PollForTransfer(&hdma_spi2_tx, HAL_DMA_FULL_TRANSFER, 5);
+   while (!spi_tx_done);
+   spi_tx_done = 0;
+}
+
+static void spi_rb_burst(uint8_t *rbuf, uint16_t len)
+{
+   HAL_SPI_Receive(&hspi2, rbuf, len, 100);
+}
+
+static void spi_wb_burst(uint8_t *tbuf, uint16_t len)
+{
+   HAL_SPI_Transmit(&hspi2, tbuf, len, 100);
+}
+
+void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+   spi_tx_done = 1;
+}
+
+void HAL_SPI_RxCpltCallback(SPI_HandleTypeDef *hspi)
+{
+   spi_rx_done = 1;
+}
 /* USER CODE END 4 */
 
 /**
