@@ -241,7 +241,13 @@ int main(void)
          else if(!strcmp("disconnect", (char*)buf))
             disconnect(app_net_data.sn);
          else if(!strcmp("send", (char*)buf))
-            send(0, (uint8_t*)"bir yazi", 9);
+         {
+            if(send(0, (uint8_t*)"bir yazi\n", 9) < 0)
+            {
+              print("cannot send!\n");
+            }
+         }
+
 
       }
 
@@ -516,7 +522,7 @@ static void appHardfault(uint8_t id)
 
 static void appLinkOff(void)
 {
-   print("check the cable!\n");
+   print("check the eth cable or MOSI!\n");
 }
 
 static void appConflict(void)
