@@ -33,12 +33,11 @@
 #include "string.h"
 #include "retarget.h"
 #include "steady_clock.h"
+#include "macro.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
-
-
 
 enum
 {
@@ -86,22 +85,21 @@ typedef struct
    uint16_t destport;
    uint8_t sn;
    uint8_t destip[4];
-}app_data_t;
+} app_data_t;
 
-app_data_t app_net_data = {
-    .net_info = {
-        .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef}, // Mac address
-        //.ip   = {10, 60, 3, 35},                     // IP address
-        .ip = {192, 168, 1, 99},                      // IP address
-        .sn = {255, 255, 255, 0},                     // Subnet mask
-        .gw = {192, 168, 1, 1}                         // Gateway address
-    },
-    .port = 8080,
-    .sn = 0,
-};
-
-
-
+app_data_t app_net_data =
+{.net_info =
+{.mac =
+{0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
+//.ip   = {10, 60, 3, 35},                     // IP address
+      .ip =
+      {192, 168, 1, 99},// IP address
+      .sn =
+      {255, 255, 255, 0},// Subnet mask
+      .gw =
+      {192, 168, 1, 1}// Gateway address
+}, .port = 8080, .sn = 0, .destport = 50000, .destip =
+{192, 168, 1, 38}, };
 
 static soft_timer_t timer_obj[TIMER_END];
 
@@ -115,9 +113,7 @@ static void MX_GPIO_Init(void);
 static void MX_DMA_Init(void);
 static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
-static int8_t appServerStart(void);
 static void printInfo(void);
-
 
 static void appSendOk(uint8_t id, uint16_t len);
 static void appTimeout(uint8_t id, uint8_t discon);
@@ -136,10 +132,9 @@ static void spi_wb_burst(uint8_t *tbuf, uint16_t len);
 static void spi_rb_burst_dma(uint8_t *rbuf, uint16_t len);
 static void spi_wb_burst_dma(uint8_t *tbuf, uint16_t len);
 
-
-
-
-uint8_t buf[16384] = {0};
+uint8_t buf[16384] =
+{0};
+uint8_t cmd[15] ={0};
 
 /* USER CODE END PFP */
 
@@ -190,8 +185,7 @@ int main(void)
    reg_wizchip_cs_cbfunc(cs_sel, cs_desel);
    reg_wizchip_spiburst_cbfunc(spi_rb_burst_dma, spi_wb_burst_dma);
 
-
-   // ethInitDefault ilk çağrılmalı
+// ethInitDefault ilk çağrılmalı
    ethInitDefault(&app_net_data.net_info);
    setEthIntCallbacks(appConflict, appUnreach, NULL, NULL);
    setSockIntCallbacks(app_net_data.sn, appSendOk, appTimeout, appRecv, appDiscon, appCon);
@@ -200,11 +194,9 @@ int main(void)
 
    timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, ethObserver);
 
-
-   while(!scan("%s", buf));
-   print("%s\n", buf);
-
-   appServerStart();
+   while (!scan("%s", cmd));
+   print("%s\n", cmd);
+   CLEAR_STRUCT(cmd);
 
    printInfo();
    print("CHIP-VERSION: %d\n"
@@ -216,9 +208,8 @@ int main(void)
          "Sn_IMR: %X\n"
          "TX Buffer: %d kb\n"
          "RX Buffer: %d kb\n"
-         "Link Status: %s\n",
-         getVERSIONR(), getINTLEVEL(), getIMR(), getSIMR(), getRTR(), getRCR(),
-         getSn_IMR(0), getSn_TXBUF_SIZE(0), getSn_RXBUF_SIZE(0),
+         "Link Status: %s\n", getVERSIONR(), getINTLEVEL(), getIMR(), getSIMR(), getRTR(), getRCR(), getSn_IMR(0), getSn_TXBUF_SIZE(0),
+         getSn_RXBUF_SIZE(0),
          getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
 
    timerStart(&timer_obj[TIMER_0]);
@@ -234,23 +225,47 @@ int main(void)
    {
       sockDataHandler(app_net_data.sn);
 
-      if(getline((char*)buf))
+      getline((char*)cmd);
+
+      if(!strcmp("socket", (char*)cmd))
       {
-         if(!strcmp("init", (char*)buf))
-            appServerStart();
-         else if(!strcmp("disconnect", (char*)buf))
-            disconnect(app_net_data.sn);
-         else if(!strcmp("send", (char*)buf))
+         if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
          {
-            if(send(0, (uint8_t*)"bir yazi\n", 9) < 0)
-            {
-              print("cannot send!\n");
-            }
+            print("socket %d cannot open\r\n", app_net_data.sn);
+            return -1;
          }
-
-
+         enableKeepAliveAuto(app_net_data.sn, 1);
+         print("Socket %d opened\r\n", app_net_data.sn);
       }
+      else if(!strcmp("listen", (char*)cmd))
+      {
+         if(listen(app_net_data.sn) != SOCK_OK)
+         {
+            print("socket %d cannot listen\n");
+            return -1;
+         }
+         print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
+      }
+      else if(!strcmp("connect", (char*)cmd))
+      {
+         print("Socket %d try to connect to the %d.%d.%d.%d : %d\n", app_net_data.sn, app_net_data.destip[0], app_net_data.destip[1],
+               app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
 
+         if(connect(app_net_data.sn, app_net_data.destip, app_net_data.destport) != SOCK_OK)
+            print("cannot connect!\n");
+      }
+      else if(!strcmp("disconnect", (char*)cmd))
+      {
+         disconnect(app_net_data.sn);
+      }
+      else if(!strcmp("send", (char*)cmd))
+      {
+         if(send(0, (uint8_t*)"bir yazi\n", 9) < 0)
+         {
+            print("cannot send!\n");
+         }
+      }
+      CLEAR_STRUCT(cmd);
       timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
       /* USER CODE END WHILE */
 
@@ -258,7 +273,6 @@ int main(void)
    }
    /* USER CODE END 3 */
 }
-
 
 /**
  * @brief System Clock Configuration
@@ -435,43 +449,21 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
-static int8_t appServerStart(void)
-{
-   if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
-   {
-      print("socket %d cannot open\r\n", app_net_data.sn);
-      return -1;
-   }
-   enableKeepAliveAuto(app_net_data.sn, 1);
-   print("Socket %d opened\r\n", app_net_data.sn);
-
-   if(listen(app_net_data.sn) != SOCK_OK)
-   {
-      print("socket %d cannot listen\n");
-      return -1;
-   }
-   print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
-
-   return 0;
-}
 
 void printInfo(void)
 {
    print("---------------------\n");
    print("Network configuration:\r\n");
-   print("IP ADDRESS:  %d.%d.%d.%d\r\n", app_net_data.net_info.ip[0], app_net_data.net_info.ip[1], app_net_data.net_info.ip[2], app_net_data.net_info.ip[3]);
-   print("NETMASK:     %d.%d.%d.%d\r\n", app_net_data.net_info.sn[0], app_net_data.net_info.sn[1], app_net_data.net_info.sn[2], app_net_data.net_info.sn[3]);
-   print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2], app_net_data.net_info.gw[3]);
-   print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2], app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
+   print("IP ADDRESS:  %d.%d.%d.%d\r\n", app_net_data.net_info.ip[0], app_net_data.net_info.ip[1], app_net_data.net_info.ip[2],
+         app_net_data.net_info.ip[3]);
+   print("NETMASK:     %d.%d.%d.%d\r\n", app_net_data.net_info.sn[0], app_net_data.net_info.sn[1], app_net_data.net_info.sn[2],
+         app_net_data.net_info.sn[3]);
+   print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2],
+         app_net_data.net_info.gw[3]);
+   print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2],
+         app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
    print("---------------------\n");
 }
-
-
-
-
-
-
-
 
 static void appSendOk(uint8_t id, uint16_t len)
 {
@@ -489,7 +481,7 @@ static void appTimeout(uint8_t id, uint8_t discon)
 
 static void appRecv(uint8_t id)
 {
-   int32_t size,ret;
+   int32_t size, ret;
 
    size = getSn_RX_RSR(id);
    ret = recv(id, buf, size);
@@ -511,8 +503,8 @@ static void appCon(uint8_t id)
 {
    getSn_DIPR(id, app_net_data.destip);// client ip adresini al
    app_net_data.destport = getSn_DPORT(id);
-   print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", id, app_net_data.destip[0], app_net_data.destip[1],
-                                                     app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
+   print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", id, app_net_data.destip[0], app_net_data.destip[1], app_net_data.destip[2],
+         app_net_data.destip[3], app_net_data.destport);
 }
 
 static void appHardfault(uint8_t id)
@@ -534,11 +526,6 @@ static void appUnreach(void)
 {
    print("unreach!\n");
 }
-
-
-
-
-
 
 void cs_sel(void)
 {

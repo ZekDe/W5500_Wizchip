@@ -90,13 +90,6 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
    int32_t ret;// return value for SOCK_ERRORs
    uint16_t size = 0, sentsize = 0;
 
-// Destination (TCP Server) IP info (will be connected)
-// >> loopback_tcpc() function parameter
-// >> Ex)
-//	uint8_t destip[4] = 	{192, 168, 0, 214};
-//	uint16_t destport = 	5000;
-
-// Port number for TCP client (will be increased)
    static uint16_t any_port = 50000;
 
 // Socket Status Transitions
@@ -106,7 +99,7 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
    case SOCK_ESTABLISHED:
       if(getSn_IR(sn) & Sn_IR_CON)// Socket n interrupt register mask; TCP CON interrupt = connection with peer is successful
       {
-//printf("%d:Connected to - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
+         print("%d:Connected to - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
          setSn_IR(sn, Sn_IR_CON);// this interrupt should be write the bit cleared to '1'
       }
 
@@ -139,11 +132,11 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
    case SOCK_CLOSE_WAIT:
       if((ret = disconnect(sn)) != SOCK_OK)
          return ret;
-//printf("%d:Socket Closed\r\n", sn);
+      print("%d:Socket Closed\r\n", sn);
    break;
 
    case SOCK_INIT:
-//printf("%d:Try to connect to the %d.%d.%d.%d : %d\r\n", sn, destip[0], destip[1], destip[2], destip[3], destport);
+      print("%d:Try to connect to the %d.%d.%d.%d : %d\r\n", sn, destip[0], destip[1], destip[2], destip[3], destport);
       if((ret = connect(sn, destip, destport)) != SOCK_OK)
          return ret;//	Try to TCP connect to the TCP server (destination)
    break;
@@ -156,8 +149,7 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
             any_port = 50000;
          return ret;// TCP socket open with 'any_port' port number
       }
-//printf("%d:TCP client loopback start\r\n",sn);
-//printf("%d:Socket opened\r\n",sn);
+      printf("%d:Socket opened\r\n",sn);
    break;
    default:
    break;
