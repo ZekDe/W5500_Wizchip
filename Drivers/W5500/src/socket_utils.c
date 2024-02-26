@@ -45,12 +45,12 @@ typedef struct
 typedef struct
 {
    uint32_t discon :1;
-   uint32_t hardfault :1;
+   uint32_t ethfault :1;
 }sock_int_err_t;
 
 typedef struct
 {
-   void (*hardfault)(uint8_t sn);
+   void (*ethfault)(uint8_t sn);
 }sock_int_err_cb_t;
 
 typedef struct
@@ -188,16 +188,16 @@ void setEthIntCallbacks(
 
 /**
  * \fn void setSockIntErrCallbacks(uint8_t, void(*)(uint8_t))
- * \brief setter for hardfault function
+ * \brief setter for ethfault function
  * \param sn: socket number
- * \param hardfault: it is called in case of if device registers cannot be read.
+ * \param ethfault: it is called in case of if device registers cannot be read.
  * actually in this file, this function is called if disconnect cannot be executed correctly
  * which depends device register couldn't be read in backround.
  */
 void setSockIntErrCallbacks(uint8_t sn,
-      void (*hardfault)(uint8_t sn))
+      void (*ethfault)(uint8_t sn))
 {
-   sock_int_err_cb[sn].hardfault = hardfault;
+   sock_int_err_cb[sn].ethfault = ethfault;
 }
 
 /**
@@ -282,7 +282,7 @@ void sockDataHandler(uint8_t sn)
          if(close(sn) == SOCK_OK)
             sock_int_status_cb[sn].timeout(sn, 1);
          else
-            sock_int_err_cb[sn].hardfault(sn);
+            sock_int_err_cb[sn].ethfault(sn);
 
       }
       sock_int_status_cb[sn].timeout(sn, 0);

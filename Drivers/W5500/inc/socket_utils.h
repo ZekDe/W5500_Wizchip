@@ -31,7 +31,7 @@ void setEthIntCallbacks(
       void (*unreach)(void),
       void (*PPPoe)(void),
       void (*mp)(void));
-void setSockIntErrCallbacks(uint8_t sn, void (*hardfault)(uint8_t sn));
+void setSockIntErrCallbacks(uint8_t sn, void (*ethfault)(uint8_t sn));
 void setEthIntErrCallbacks(void (*linkoff)(void));
 void setTCPto(uint16_t rtr, uint8_t rcr);
 void enableKeepAliveAuto(uint8_t sn, uint8_t val);

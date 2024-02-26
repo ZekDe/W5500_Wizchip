@@ -115,15 +115,15 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void printInfo(void);
 
-static void appSendOk(uint8_t id, uint16_t len);
-static void appTimeout(uint8_t id, uint8_t discon);
-static void appRecv(uint8_t id);
-static void appDiscon(uint8_t id);
+static void doSendOk(uint8_t id, uint16_t len);
+static void doTimeout(uint8_t id, uint8_t discon);
+static void doRecv(uint8_t id);
+static void doDiscon(uint8_t id);
 static void appCon(uint8_t id);
-static void appHardfault(uint8_t id);
-static void appLinkOff(void);
-static void appConflict(void);
-static void appUnreach(void);
+static void doEthfault(uint8_t id);
+static void doLinkOff(void);
+static void doConflict(void);
+static void doUnreach(void);
 
 static void cs_sel(void);
 static void cs_desel(void);
@@ -187,10 +187,10 @@ int main(void)
 
 // ethInitDefault ilk çağrılmalı
    ethInitDefault(&app_net_data.net_info);
-   setEthIntCallbacks(appConflict, appUnreach, NULL, NULL);
-   setSockIntCallbacks(app_net_data.sn, appSendOk, appTimeout, appRecv, appDiscon, appCon);
-   setSockIntErrCallbacks(app_net_data.sn, appHardfault);
-   setEthIntErrCallbacks(appLinkOff);
+   setEthIntCallbacks(doConflict, doUnreach, NULL, NULL);
+   setSockIntCallbacks(app_net_data.sn, doSendOk, doTimeout, doRecv, doDiscon, appCon);
+   setSockIntErrCallbacks(app_net_data.sn, doEthfault);
+   setEthIntErrCallbacks(doLinkOff);
 
    timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, ethObserver);
 
@@ -465,7 +465,7 @@ void printInfo(void)
    print("---------------------\n");
 }
 
-static void appSendOk(uint8_t id, uint16_t len)
+static void doSendOk(uint8_t id, uint16_t len)
 {
    print("------------------\n"
          "Socket: %d\n"
@@ -474,12 +474,12 @@ static void appSendOk(uint8_t id, uint16_t len)
 }
 
 // kablo çıkarıldığında ayarlanan süre sonra timeout oluşur
-static void appTimeout(uint8_t id, uint8_t discon)
+static void doTimeout(uint8_t id, uint8_t discon)
 {
    print("timeout occured!\n");
 }
 
-static void appRecv(uint8_t id)
+static void doRecv(uint8_t id)
 {
    int32_t size, ret;
 
@@ -494,7 +494,7 @@ static void appRecv(uint8_t id)
    print("Send return: %d\n", send(app_net_data.sn, buf, size));
 }
 
-static void appDiscon(uint8_t id)
+static void doDiscon(uint8_t id)
 {
    print("Socket %d disconnected\n", id);
 }
@@ -507,22 +507,22 @@ static void appCon(uint8_t id)
          app_net_data.destip[3], app_net_data.destport);
 }
 
-static void appHardfault(uint8_t id)
+static void doEthfault(uint8_t id)
 {
-   print("hardfault!\n");
+   print("Ethfault!\n");
 }
 
-static void appLinkOff(void)
+static void doLinkOff(void)
 {
    print("check the eth cable or MOSI!\n");
 }
 
-static void appConflict(void)
+static void doConflict(void)
 {
    print("conflict!\n");
 }
 
-static void appUnreach(void)
+static void doUnreach(void)
 {
    print("unreach!\n");
 }
