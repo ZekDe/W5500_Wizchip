@@ -223,7 +223,7 @@ int main(void)
 
    timerStart(&timer_obj[TIMER_0]);
 
-   dwtEnable();
+   steadyClockEnable();
 
    /* USER CODE END 2 */
 
