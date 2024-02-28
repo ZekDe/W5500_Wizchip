@@ -119,7 +119,7 @@ static void doSendOk(uint8_t id, uint16_t len);
 static void doTimeout(uint8_t id, uint8_t discon);
 static void doRecv(uint8_t id);
 static void doDiscon(uint8_t id);
-static void appCon(uint8_t id);
+static void doCon(uint8_t id);
 static void doEthfault(uint8_t id);
 static void doLinkOff(void);
 static void doConflict(void);
@@ -188,7 +188,7 @@ int main(void)
 // ethInitDefault ilk çağrılmalı
    ethInitDefault(&app_net_data.net_info);
    setEthIntCallbacks(doConflict, doUnreach, NULL, NULL);
-   setSockIntCallbacks(app_net_data.sn, doSendOk, doTimeout, doRecv, doDiscon, appCon);
+   setSockIntCallbacks(app_net_data.sn, doSendOk, doTimeout, doRecv, doDiscon, doCon);
    setSockIntErrCallbacks(app_net_data.sn, doEthfault);
    setEthIntErrCallbacks(doLinkOff);
 
@@ -499,7 +499,7 @@ static void doDiscon(uint8_t id)
    print("Socket %d disconnected\n", id);
 }
 
-static void appCon(uint8_t id)
+static void doCon(uint8_t id)
 {
    getSn_DIPR(id, app_net_data.destip);// client ip adresini al
    app_net_data.destport = getSn_DPORT(id);
