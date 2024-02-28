@@ -18,8 +18,8 @@
 
 typedef struct wiz_NetInfo_t wiz_NetInfo;
 
-void ethInit(const wiz_NetInfo *info, const uint8_t *txsize, const uint8_t *rxsize);
-void ethInitDefault(const wiz_NetInfo *info);
+void ethInit(wiz_NetInfo *info, uint8_t *txsize, uint8_t *rxsize);
+void ethInitDefault(wiz_NetInfo *info);
 void setSockIntCallbacks(uint8_t sn,
       void (*send_ok)(uint8_t sn, uint16_t len),
       void (*timeout)(uint8_t sn, uint8_t discon),
@@ -35,8 +35,11 @@ void setSockIntErrCallbacks(uint8_t sn, void (*ethfault)(uint8_t sn));
 void setEthIntErrCallbacks(void (*linkoff)(void));
 void setTCPto(uint16_t rtr, uint8_t rcr);
 void enableKeepAliveAuto(uint8_t sn, uint8_t val);
+int8_t isConnected(uint8_t sn);
+int8_t isClosed(uint8_t sn);
+int8_t isOpened(uint8_t sn);
 void sockDataHandler(uint8_t sn);
 void ethIntAsserted(void);
-void ethObserver(void);
+void ethObserver(uint8_t sn);
 
 #endif /* SOCKET_UTILS_H_ */

@@ -51,7 +51,7 @@ enum
 
 enum
 {
-   TIMER_0_DURATION = 2000,
+   TIMER_0_DURATION = 50,
 };
 
 enum
@@ -115,15 +115,17 @@ static void MX_SPI2_Init(void);
 /* USER CODE BEGIN PFP */
 static void printInfo(void);
 
-static void doSendOk(uint8_t id, uint16_t len);
-static void doTimeout(uint8_t id, uint8_t discon);
-static void doRecv(uint8_t id);
-static void doDiscon(uint8_t id);
-static void doCon(uint8_t id);
-static void doEthfault(uint8_t id);
+static void doSendOk(uint8_t sn, uint16_t len);
+static void doTimeout(uint8_t sn, uint8_t discon);
+static void doRecv(uint8_t sn);
+static void doDiscon(uint8_t sn);
+static void doCon(uint8_t sn);
+static void doEthfault(uint8_t sn);
 static void doLinkOff(void);
 static void doConflict(void);
 static void doUnreach(void);
+
+static void periodicTimer(void);
 
 static void cs_sel(void);
 static void cs_desel(void);
@@ -192,7 +194,8 @@ int main(void)
    setSockIntErrCallbacks(app_net_data.sn, doEthfault);
    setEthIntErrCallbacks(doLinkOff);
 
-   timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, ethObserver);
+
+   timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
 
    while (!scan("%s", cmd));
    print("%s\n", cmd);
@@ -212,7 +215,7 @@ int main(void)
          getSn_RXBUF_SIZE(0),
          getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
 
-   timerStart(&timer_obj[TIMER_0]);
+   //timerStart(&timer_obj[TIMER_0]);
 
    steadyClockEnable();
 
@@ -224,6 +227,10 @@ int main(void)
    while (1)
    {
       sockDataHandler(app_net_data.sn);
+      periodicTimer();
+
+      if(*cmd)
+         CLEAR_STRUCT(cmd);
 
       getline((char*)cmd);
 
@@ -232,7 +239,6 @@ int main(void)
          if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
          {
             print("socket %d cannot open\r\n", app_net_data.sn);
-            return -1;
          }
          enableKeepAliveAuto(app_net_data.sn, 1);
          print("Socket %d opened\r\n", app_net_data.sn);
@@ -241,8 +247,7 @@ int main(void)
       {
          if(listen(app_net_data.sn) != SOCK_OK)
          {
-            print("socket %d cannot listen\n");
-            return -1;
+            print("socket %d cannot listen\n", app_net_data.sn);
          }
          print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
       }
@@ -251,12 +256,16 @@ int main(void)
          print("Socket %d try to connect to the %d.%d.%d.%d : %d\n", app_net_data.sn, app_net_data.destip[0], app_net_data.destip[1],
                app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
 
-         if(connect(app_net_data.sn, app_net_data.destip, app_net_data.destport) != SOCK_OK)
-            print("cannot connect!\n");
+         int8_t ret = 0;
+         if((ret = connect(app_net_data.sn, app_net_data.destip, app_net_data.destport)) != SOCK_OK)
+            print("connection failed: %d\n", ret);
       }
       else if(!strcmp("disconnect", (char*)cmd))
       {
-         disconnect(app_net_data.sn);
+         if(disconnect(app_net_data.sn) != SOCK_OK)
+         {
+            print("cannot disconnect properly!\n");
+         }
       }
       else if(!strcmp("send", (char*)cmd))
       {
@@ -265,7 +274,7 @@ int main(void)
             print("cannot send!\n");
          }
       }
-      CLEAR_STRUCT(cmd);
+
       timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
       /* USER CODE END WHILE */
 
@@ -465,56 +474,68 @@ void printInfo(void)
    print("---------------------\n");
 }
 
-static void doSendOk(uint8_t id, uint16_t len)
+static void doSendOk(uint8_t sn, uint16_t len)
 {
    print("------------------\n"
          "Socket: %d\n"
          "%d bytes data sent\n"
-         "------------------\n", id, len);
+         "------------------\n", sn, len);
 }
 
-// kablo çıkarıldığında ayarlanan süre sonra timeout oluşur
-static void doTimeout(uint8_t id, uint8_t discon)
+static void doTimeout(uint8_t sn, uint8_t discon)
 {
-   print("timeout occured!\n");
+   char info[30];
+   switch(discon)
+   {
+   case 0:
+      strcpy(info, "timeout");
+   break;
+   case 1:
+      strcpy(info, "timeout by disconnect");
+   break;
+   case 2:
+      strcpy(info, "timeout by connect to host");
+   break;
+   }
+   print("%s\n", info);
 }
 
-static void doRecv(uint8_t id)
+static void doRecv(uint8_t sn)
 {
    int32_t size, ret;
 
-   size = getSn_RX_RSR(id);
-   ret = recv(id, buf, size);
+   size = getSn_RX_RSR(sn);
+   ret = recv(sn, buf, size);
    print("------------------\n"
          "received size: %d\n"
          "ret: %d\n"
          "data: %s\n"
          "------------------\n", size, ret, buf);
 
-   print("Send return: %d\n", send(app_net_data.sn, buf, size));
+   print("Send return: %d\n", send(sn, buf, size));
 }
 
-static void doDiscon(uint8_t id)
+static void doDiscon(uint8_t sn)
 {
-   print("Socket %d disconnected\n", id);
+   print("Socket %d disconnected\n", sn);
 }
 
-static void doCon(uint8_t id)
+static void doCon(uint8_t sn)
 {
-   getSn_DIPR(id, app_net_data.destip);// client ip adresini al
-   app_net_data.destport = getSn_DPORT(id);
-   print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", id, app_net_data.destip[0], app_net_data.destip[1], app_net_data.destip[2],
+   getSn_DIPR(sn, app_net_data.destip);// client ip adresini al
+   app_net_data.destport = getSn_DPORT(sn);
+   print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", sn, app_net_data.destip[0], app_net_data.destip[1], app_net_data.destip[2],
          app_net_data.destip[3], app_net_data.destport);
 }
 
-static void doEthfault(uint8_t id)
+static void doEthfault(uint8_t sn)
 {
    print("Ethfault!\n");
 }
 
 static void doLinkOff(void)
 {
-   print("check the eth cable or MOSI!\n");
+   print("check the eth cable or MOSI-MISO!\n");
 }
 
 static void doConflict(void)
@@ -527,6 +548,10 @@ static void doUnreach(void)
    print("unreach!\n");
 }
 
+static void periodicTimer(void)
+{
+   ethObserver(0);
+}
 void cs_sel(void)
 {
    HAL_GPIO_WritePin(ETH_CS_GPIO_Port, ETH_CS_Pin, GPIO_PIN_RESET);//CS LOW

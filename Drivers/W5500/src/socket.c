@@ -73,6 +73,10 @@ static uint16_t sock_remained_size[_WIZCHIP_SOCK_NUM_] =
 uint8_t sock_pack_info[_WIZCHIP_SOCK_NUM_] =
 {0, };
 
+
+sock_cmd_t sock_cmd[8];
+
+
 #define CHECK_SOCKNUM()   \
    do{                    \
       if(sn > _WIZCHIP_SOCK_NUM_) return SOCKERR_SOCKNUM;   \
@@ -104,10 +108,6 @@ enum
    TON_0 = 0, TON_1, TON_END,
 };
 
-enum
-{
-   ED_0 = 0, ED_END,
-};
 
 static ton_t ton_obj[TON_END];
 
@@ -187,7 +187,6 @@ int8_t socket(uint8_t sn, uint8_t protocol, uint16_t port, uint8_t flag)
 
    setSn_PORT(sn, port);
    setSn_CR(sn, Sn_CR_OPEN);
-
    while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
    if(is_ok)
    {
@@ -205,12 +204,14 @@ int8_t socket(uint8_t sn, uint8_t protocol, uint16_t port, uint8_t flag)
 //sock_pack_info[sn] = 0;
    sock_pack_info[sn] = PACK_COMPLETED;
 
+
    while (!TON(&ton_obj[TON_0], is_ok = (getSn_SR(sn) == SOCK_CLOSED), getTick(), TON_0_DURATION) && is_ok);
    if(is_ok)
    {
       TON(&ton_obj[TON_0], 0, 0, 0);
       return SOCKERR_DEVICE;
    }
+
 
    return (int8_t)sn;
 }
@@ -244,6 +245,7 @@ int8_t close(uint8_t sn)
       TON(&ton_obj[TON_1], 0, 0, 0);
       return SOCKERR_DEVICE;
    }
+
    return SOCK_OK;
 }
 
@@ -263,17 +265,12 @@ int8_t listen(uint8_t sn)
       return SOCKERR_DEVICE;
    }
 
-   while (!TON(&ton_obj[TON_0], is_ok = (getSn_SR(sn) != SOCK_LISTEN), getTick(), TON_0_DURATION) && is_ok)
+   if(getSn_SR(sn) != SOCK_LISTEN)
    {
       if(close(sn) == SOCK_OK)
          return SOCKERR_SOCKCLOSED;
       else
          return SOCKERR_DEVICE;
-   }
-   if(is_ok)
-   {
-      TON(&ton_obj[TON_0], 0, 0, 0);
-      return SOCK_ERROR;
    }
 
    return SOCK_OK;
@@ -281,8 +278,6 @@ int8_t listen(uint8_t sn)
 
 int8_t connect(uint8_t sn, uint8_t *addr, uint16_t port)
 {
-   uint8_t is_ok;
-
    CHECK_SOCKNUM();
    CHECK_SOCKMODE(Sn_MR_TCP);
    CHECK_SOCKINIT();
@@ -300,33 +295,20 @@ int8_t connect(uint8_t sn, uint8_t *addr, uint16_t port)
 
    if(port == 0)
       return SOCKERR_PORTZERO;
+
    setSn_DIPR(sn, addr);
    setSn_DPORT(sn, port);
    setSn_CR(sn, Sn_CR_CONNECT);
+   sock_cmd[sn].connect = 1;
+
+   uint8_t is_ok;
 
    while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
    if(is_ok)
    {
       TON(&ton_obj[TON_0], 0, 0, 0);
+      sock_cmd[sn].connect = 0;
       return SOCKERR_DEVICE;
-   }
-
-   if(sock_io_mode & (1 << sn))
-      return SOCK_BUSY;
-
-//todo:TIMEOUT EKLE
-   while (getSn_SR(sn) != SOCK_ESTABLISHED)
-   {
-      if(getSn_IR(sn) & Sn_IR_TIMEOUT)
-      {
-         setSn_IR(sn, Sn_IR_TIMEOUT);
-         return SOCKERR_TIMEOUT;
-      }
-
-      if(getSn_SR(sn) == SOCK_CLOSED)
-      {
-         return SOCKERR_SOCKCLOSED;
-      }
    }
 
    return SOCK_OK;
@@ -339,11 +321,13 @@ int8_t disconnect(uint8_t sn)
    CHECK_SOCKNUM();
    CHECK_SOCKMODE(Sn_MR_TCP);
    setSn_CR(sn, Sn_CR_DISCON);
+   sock_cmd[sn].discon = 1;
    /* wait to process the command... */
    while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
    if(is_ok)
    {
       TON(&ton_obj[TON_0], 0, 0, 0);
+      sock_cmd[sn].discon = 0;
       return SOCKERR_DEVICE;
    }
 
@@ -351,19 +335,10 @@ int8_t disconnect(uint8_t sn)
    if(sock_io_mode & (1 << sn))
       return SOCK_BUSY;
 
-   while (!TON(&ton_obj[TON_0], is_ok = (getSn_SR(sn) != SOCK_CLOSED), getTick(), TON_0_DURATION) && is_ok);
-   if(is_ok)
-   {
-      TON(&ton_obj[TON_0], 0, 0, 0);
-      return SOCKERR_DEVICE;
-   }
 
    return SOCK_OK;
 }
 
-float first;
-float second;
-float result;
 
 int32_t send(uint8_t sn, uint8_t *buf, uint16_t len)
 {
@@ -414,7 +389,7 @@ int32_t send(uint8_t sn, uint8_t *buf, uint16_t len)
        */
       if(TON(&ton_obj[TON_0], 1, getTick(), TON_0_DURATION))
       {
-         //TON_0_DURATION süresi dolduğunda çık, bağlantı aşağıdaki bağlantı durumunun önemi yok
+         //TON_0_DURATION süresi dolduğunda çık, aşağıdaki bağlantı durumunun önemi yok
          TON(&ton_obj[TON_0], 0, 0, 0);
          return SOCKERR_DEVICE;
       }
@@ -429,6 +404,7 @@ int32_t send(uint8_t sn, uint8_t *buf, uint16_t len)
       }
       if((sock_io_mode & (1 << sn)) && (len > freesize))
          return SOCK_BUSY;
+
       if(len <= freesize)
          break;
    }
@@ -452,7 +428,6 @@ int32_t send(uint8_t sn, uint8_t *buf, uint16_t len)
 
 int32_t recv(uint8_t sn, uint8_t *buf, uint16_t len)
 {
-   first = getusec();
    uint8_t tmp = 0;
    uint16_t recvsize = 0;
 
@@ -466,7 +441,6 @@ int32_t recv(uint8_t sn, uint8_t *buf, uint16_t len)
 
    while (1)
    {
-      // Yazmadaki benzer işlem burada da var
       if(TON(&ton_obj[TON_0], 1, getTick(), TON_0_DURATION))
       {
          TON(&ton_obj[TON_0], 0, 0, 0);
@@ -514,9 +488,6 @@ int32_t recv(uint8_t sn, uint8_t *buf, uint16_t len)
       return SOCKERR_DEVICE;
    }
 
-   second = getusec();
-   result = second - first;
-   print("Send duration: %.2f us\n", result);
    return (int32_t)len;
 }
 

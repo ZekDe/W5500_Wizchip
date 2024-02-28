@@ -7,6 +7,11 @@
 #include "socket_utils.h"
 #include "socket.h"
 #include "macro.h"
+#include "edge_detection.h"
+#include "ton.h"
+#include "main.h" // for tick
+
+
 typedef struct
 {
    uint32_t send_ok :1;
@@ -44,12 +49,6 @@ typedef struct
 
 typedef struct
 {
-   uint32_t discon :1;
-   uint32_t ethfault :1;
-}sock_int_err_t;
-
-typedef struct
-{
    void (*ethfault)(uint8_t sn);
 }sock_int_err_cb_t;
 
@@ -58,23 +57,37 @@ typedef struct
    void (*linkoff)(void);
 }eth_int_err_cb_t;
 
-enum sn{
+enum{
    SOCK_0,
-   SOCK_END
+   SOCK_END,
 };
 
-static sock_int_status_t sock_int_status[SOCK_END];
+enum
+{
+   TON_0,
+   TON_END,
+};
+
+enum
+{
+   ED_0,
+   ED_END,
+};
+
+
 static sock_int_status_cb_t sock_int_status_cb[SOCK_END];
 
 static eth_int_status_t  eth_int_status;
 static eth_int_status_cb_t eth_int_status_cb;
 
-static sock_int_err_t sock_int_err[SOCK_END];
 static sock_int_err_cb_t sock_int_err_cb[SOCK_END];
 
 static eth_int_err_cb_t eth_int_err_cb;
 
 static volatile uint8_t eth_flag;
+
+edge_detection_t ed_obj[ED_END];
+static ton_t ton_obj[TON_END];
 
 /**
  * \fn void ethInit(wiz_NetInfo*, uint8_t*, uint8_t*)
@@ -83,7 +96,7 @@ static volatile uint8_t eth_flag;
  * \param txsize
  * \param rxsize
  */
-void ethInit(const wiz_NetInfo* info, const  uint8_t* txsize, const  uint8_t* rxsize)
+void ethInit(wiz_NetInfo* info, uint8_t* txsize, uint8_t* rxsize)
 {
    wizchip_init(txsize, rxsize);
    wizchip_setnetinfo(info);
@@ -94,12 +107,11 @@ void ethInit(const wiz_NetInfo* info, const  uint8_t* txsize, const  uint8_t* rx
  * \brief must be called first
  * \param info
  */
-void ethInitDefault(const wiz_NetInfo* info)
+void ethInitDefault(wiz_NetInfo* info)
 {
    uint8_t sock_buffer[] = {16, 0, 0, 0, 0, 0, 0, 0};
    ethInit(info, sock_buffer, sock_buffer);
    setTCPto(2000, 5);
-   enableKeepAliveAuto(info->sn, 1);
 }
 
 
@@ -110,9 +122,9 @@ void ethInitDefault(const wiz_NetInfo* info)
  * \param sn: socket number
  * \param send_ok: called in case of data send process done
  * \param timeout: this function also takes "discon" parameter.
- * discon: if 1, it means disconnect command executed, socket couldn't be closed yet.
- * and time-out occured.
- * if 0, time-out occured in normal conditions like cable unplugged.
+ * discon: 0: normal timeout like cable unplugged.
+ *         1: disconnect command executed, socket couldn't be closed yet.
+ *         2: cannot connect to host.
  * \param recv: called in case of data received
  * \param discon: called in case of disconnection
  * \param con: called in case of connection
@@ -192,12 +204,13 @@ void setEthIntCallbacks(
  * \param sn: socket number
  * \param ethfault: it is called in case of if device registers cannot be read.
  * actually in this file, this function is called if disconnect cannot be executed correctly
- * which depends device register couldn't be read in backround.
+ * which depends device register couldn't be read in background.
  */
 void setSockIntErrCallbacks(uint8_t sn,
       void (*ethfault)(uint8_t sn))
 {
    sock_int_err_cb[sn].ethfault = ethfault;
+
 }
 
 /**
@@ -208,6 +221,7 @@ void setSockIntErrCallbacks(uint8_t sn,
 void setEthIntErrCallbacks(void (*linkoff)(void))
 {
    eth_int_err_cb.linkoff = linkoff;
+
 }
 
 /**
@@ -235,6 +249,20 @@ void enableKeepAliveAuto(uint8_t sn, uint8_t val)
    setSn_KPALVTR(sn, val);
 }
 
+int8_t isConnected(uint8_t sn)
+{
+   return getSn_SR(sn) == SOCK_ESTABLISHED;
+}
+
+int8_t isClosed(uint8_t sn)
+{
+   return getSn_SR(sn) == SOCK_CLOSED;
+}
+
+int8_t isOpened(uint8_t sn)
+{
+   return getSn_SR(sn) == SOCK_INIT;
+}
 /**
  * \fn void sockDataHandler(uint8_t)
  * \brief call it periodically
@@ -250,49 +278,55 @@ void sockDataHandler(uint8_t sn)
 
    uint8_t snir = getSn_IR(sn);
    uint8_t ir = getIR();
-   sock_int_status[sn].send_ok = !!(snir & Sn_IR_SENDOK);
-   sock_int_status[sn].timeout = !!(snir & Sn_IR_TIMEOUT);
-   sock_int_status[sn].recv = !!(snir & Sn_IR_RECV);
-   sock_int_status[sn].discon = !!(snir & Sn_IR_DISCON);
-   sock_int_status[sn].con = !!(snir & Sn_IR_CON);
+   sock_int_status_t sock_int_status;
+
+   sock_int_status.send_ok = !!(snir & Sn_IR_SENDOK);
+   sock_int_status.timeout = !!(snir & Sn_IR_TIMEOUT);
+   sock_int_status.recv = !!(snir & Sn_IR_RECV);
+   sock_int_status.discon = !!(snir & Sn_IR_DISCON);
+   sock_int_status.con = !!(snir & Sn_IR_CON);
    eth_int_status.conflict = !!(ir & IR_CONFLICT);
    eth_int_status.unreach = !!(ir & IR_UNREACH);
 
-   if(sock_int_status[sn].con)
+   if(sock_int_status.con)
    {
       setSn_IR(sn, Sn_IR_CON);
+      sock_cmd[sn].connect = 0;
       sock_int_status_cb[sn].con(sn);
    }
-   else if(sock_int_status[sn].discon)
+   else if(sock_int_status.discon)
    {
       setSn_IR(sn, Sn_IR_DISCON);
-
-      if(disconnect(sn) != SOCK_OK)
-      {
-         return;
-      }
+      sock_cmd[sn].discon = 0;
       sock_int_status_cb[sn].discon(sn);
    }
-   else if(sock_int_status[sn].timeout)
+   else if(sock_int_status.timeout)
    {
       setSn_IR(sn, Sn_IR_TIMEOUT);
 
-      if(getSn_CR(sn) & Sn_CR_DISCON)
+      if(sock_cmd[sn].discon)
       {
+         sock_cmd[sn].discon = 0;
          if(close(sn) == SOCK_OK)
             sock_int_status_cb[sn].timeout(sn, 1);
          else
             sock_int_err_cb[sn].ethfault(sn);
-
       }
-      sock_int_status_cb[sn].timeout(sn, 0);
+      else if(sock_cmd[sn].connect)
+      {
+         sock_cmd[sn].connect = 0;
+         sock_int_status_cb[sn].timeout(sn, 2);
+      }
+      else
+         sock_int_status_cb[sn].timeout(sn, 0);
+
    }
-   else if(sock_int_status[sn].recv)
+   else if(sock_int_status.recv)
    {
       setSn_IR(sn, Sn_IR_RECV);
       sock_int_status_cb[sn].recv(sn);
    }
-   else if(sock_int_status[sn].send_ok)
+   else if(sock_int_status.send_ok)
    {
       setSn_IR(sn, Sn_IR_SENDOK);
       uint16_t len = getSn_TxMAX(sn) - getSn_TX_FSR(sn);
@@ -330,15 +364,25 @@ void ethIntAsserted(void)
    eth_flag = 1;
 }
 
+
 /**
- * \fn void ethObserver(void)
- * \brief call periodically mostly in low frequency
+ * \fn void ethObserver(uint8_t sn)
+ * \brief call periodically in medium frequency like 50 ms
  * you can make your own methods to observe something about connection
  */
-void ethObserver(void)
+void ethObserver(uint8_t sn)
 {
-// disconnected durumunda da kablo kontrolünü yapabiliyor
-   !(getPHYCFGR() & PHYCFGR_LNK_ON) && (eth_int_err_cb.linkoff(), 0);
+   edgeDetection(&ed_obj[ED_0], !(getPHYCFGR() & PHYCFGR_LNK_ON)) && (eth_int_err_cb.linkoff(), 0);
+
+   if(sock_cmd[sn].connect)
+   {
+      if(getSn_SR(sn) == SOCK_CLOSED)
+      {
+         sock_cmd[sn].connect = 0;
+      }
+   }
+
+
 }
 
 

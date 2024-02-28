@@ -147,6 +147,13 @@
 #define PACK_FIFOBYTE            0x02              ///< Valid only W5300, It indicate to have read already the Sn_RX_FIFOR.
 //
 
+ typedef struct
+ {
+    uint8_t connect: 1;
+    uint8_t discon: 1;
+ }sock_cmd_t;
+
+extern sock_cmd_t sock_cmd[8];
 
 /**
  * @ingroup WIZnet_socket_APIs
