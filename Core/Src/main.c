@@ -88,18 +88,18 @@ typedef struct
 } app_data_t;
 
 app_data_t app_net_data =
-{.net_info =
-{.mac =
-{0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
-//.ip   = {10, 60, 3, 35},                     // IP address
-      .ip =
-      {192, 168, 1, 99},// IP address
-      .sn =
-      {255, 255, 255, 0},// Subnet mask
-      .gw =
-      {192, 168, 1, 1}// Gateway address
-}, .port = 8080, .sn = 0, .destport = 50000, .destip =
-{192, 168, 1, 38}, };
+{
+  .net_info =
+  {
+      .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
+      .ip = {192, 168, 1, 99},// IP address
+      .sn = {255, 255, 255, 0},// Subnet mask
+      .gw = {192, 168, 1, 1}// Gateway address
+   },
+   .port = 8080,
+   .sn = 0,
+   .destport = 50000,
+   .destip = {192, 168, 1, 38}, };
 
 static soft_timer_t timer_obj[TIMER_END];
 
@@ -137,7 +137,7 @@ static void spi_wb_burst_dma(uint8_t *tbuf, uint16_t len);
 uint8_t buf[16384] =
 {0};
 uint8_t cmd[15] ={0};
-
+uint32_t first,second,result;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -236,19 +236,26 @@ int main(void)
 
       if(!strcmp("socket", (char*)cmd))
       {
+         first = getusec();
          if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
          {
             print("socket %d cannot open\r\n", app_net_data.sn);
          }
+         second = getusec();
+         print("socket duration: %d\n",second - first);
          enableKeepAliveAuto(app_net_data.sn, 1);
          print("Socket %d opened\r\n", app_net_data.sn);
+
       }
       else if(!strcmp("listen", (char*)cmd))
       {
+         first = getusec();
          if(listen(app_net_data.sn) != SOCK_OK)
          {
             print("socket %d cannot listen\n", app_net_data.sn);
          }
+         second = getusec();
+         print("listen duration: %d\n",second - first);
          print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
       }
       else if(!strcmp("connect", (char*)cmd))
@@ -257,22 +264,39 @@ int main(void)
                app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
 
          int8_t ret = 0;
+         first = getusec();
          if((ret = connect(app_net_data.sn, app_net_data.destip, app_net_data.destport)) != SOCK_OK)
             print("connection failed: %d\n", ret);
+         second = getusec();
+         print("connect duration: %d\n", second - first);
       }
       else if(!strcmp("disconnect", (char*)cmd))
       {
+         first = getusec();
          if(disconnect(app_net_data.sn) != SOCK_OK)
          {
             print("cannot disconnect properly!\n");
          }
+         second = getusec();
+         print("disconnect duration: %d\n", second - first);
       }
       else if(!strcmp("send", (char*)cmd))
       {
+         first = getusec();
          if(send(0, (uint8_t*)"bir yazi\n", 9) < 0)
          {
             print("cannot send!\n");
          }
+         second = getusec();
+         print("send duration: %d\n", second - first);
+      }
+      else if(!strcmp("16k", (char*)cmd))
+      {
+         send(0, (uint8_t*)"16k", 3);
+      }
+      else if(!strcmp("close", (char*)cmd))
+      {
+         send(0, (uint8_t*)"close", 5);
       }
 
       timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
@@ -509,10 +533,9 @@ static void doRecv(uint8_t sn)
    print("------------------\n"
          "received size: %d\n"
          "ret: %d\n"
-         "data: %s\n"
-         "------------------\n", size, ret, buf);
-
-   print("Send return: %d\n", send(sn, buf, size));
+         "------------------\n", size, ret);
+   //print("Send return: %d\n", send(sn, buf, size));
+   send(0, buf, size);
 }
 
 static void doDiscon(uint8_t sn)
