@@ -87,19 +87,33 @@ typedef struct
    uint8_t destip[4];
 } app_data_t;
 
+//app_data_t app_net_data =
+//{
+//  .net_info =
+//  {
+//      .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
+//      .ip = {192, 168, 1, 99},// IP address
+//      .sn = {255, 255, 255, 0},// Subnet mask
+//      .gw = {192, 168, 1, 1}// Gateway address
+//   },
+//   .port = 8080,
+//   .sn = 0,
+//   .destport = 50000,
+//   .destip = {192, 168, 1, 38}, };
+
 app_data_t app_net_data =
 {
   .net_info =
   {
       .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
-      .ip = {192, 168, 1, 99},// IP address
-      .sn = {255, 255, 255, 0},// Subnet mask
-      .gw = {192, 168, 1, 1}// Gateway address
+      .ip = {10, 60, 3, 99},// IP address
+      .sn = {255, 0, 0, 0},// Subnet mask
+      .gw = {10, 60, 3, 1}// Gateway address
    },
    .port = 8080,
    .sn = 0,
    .destport = 50000,
-   .destip = {192, 168, 1, 38}, };
+   .destip = {10, 60, 3, 20}, };
 
 static soft_timer_t timer_obj[TIMER_END];
 
@@ -117,7 +131,7 @@ static void printInfo(void);
 
 static void doSendOk(uint8_t sn, uint16_t len);
 static void doTimeout(uint8_t sn, uint8_t discon);
-static void doRecv(uint8_t sn);
+static void doRecv(uint8_t sn, uint16_t len);
 static void doDiscon(uint8_t sn);
 static void doCon(uint8_t sn);
 static void doEthfault(uint8_t sn);
@@ -195,9 +209,10 @@ int main(void)
    setEthIntErrCallbacks(doLinkOff);
 
 
-   timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
+   //timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
 
    while (!scan("%s", cmd));
+
    print("%s\n", cmd);
    CLEAR_STRUCT(cmd);
 
@@ -243,7 +258,7 @@ int main(void)
          }
          second = getusec();
          print("socket duration: %d\n",second - first);
-         enableKeepAliveAuto(app_net_data.sn, 1);
+         enableKeepAliveAuto(app_net_data.sn, 2);
          print("Socket %d opened\r\n", app_net_data.sn);
 
       }
@@ -299,7 +314,7 @@ int main(void)
          send(0, (uint8_t*)"close", 5);
       }
 
-      timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
+      //timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
       /* USER CODE END WHILE */
 
       /* USER CODE BEGIN 3 */
@@ -524,18 +539,17 @@ static void doTimeout(uint8_t sn, uint8_t discon)
    print("%s\n", info);
 }
 
-static void doRecv(uint8_t sn)
+static void doRecv(uint8_t sn, uint16_t len)
 {
-   int32_t size, ret;
+   int32_t ret;
 
-   size = getSn_RX_RSR(sn);
-   ret = recv(sn, buf, size);
+   ret = recv(sn, buf, len);
    print("------------------\n"
          "received size: %d\n"
          "ret: %d\n"
-         "------------------\n", size, ret);
-   //print("Send return: %d\n", send(sn, buf, size));
-   send(0, buf, size);
+         "------------------\n", len, ret);
+   //print("Send return: %d\n", send(sn, buf, len));
+   send(sn, buf, len);
 }
 
 static void doDiscon(uint8_t sn)
@@ -573,7 +587,7 @@ static void doUnreach(void)
 
 static void periodicTimer(void)
 {
-   ethObserver(0);
+   ethObserver(app_net_data.sn);
 }
 void cs_sel(void)
 {

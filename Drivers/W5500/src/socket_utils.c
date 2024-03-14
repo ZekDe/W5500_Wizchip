@@ -8,7 +8,6 @@
 #include "socket.h"
 #include "macro.h"
 #include "edge_detection.h"
-#include "ton.h"
 #include "main.h" // for tick
 
 
@@ -25,7 +24,7 @@ typedef struct
 {
    void (*send_ok)(uint8_t sn, uint16_t len);
    void (*timeout)(uint8_t sn, uint8_t discon);
-   void (*recv)(uint8_t sn);
+   void (*recv)(uint8_t sn, uint16_t len);
    void (*discon)(uint8_t sn);
    void (*con)(uint8_t sn);
 }sock_int_status_cb_t;
@@ -64,13 +63,7 @@ enum{
 
 enum
 {
-   TON_0,
-   TON_END,
-};
-
-enum
-{
-   ED_0,
+   ED_LINKOFF,
    ED_END,
 };
 
@@ -86,8 +79,7 @@ static eth_int_err_cb_t eth_int_err_cb;
 
 static volatile uint8_t eth_flag;
 
-edge_detection_t ed_obj[ED_END];
-static ton_t ton_obj[TON_END];
+static edge_detection_t ed_obj[ED_END];
 
 /**
  * \fn void ethInit(wiz_NetInfo*, uint8_t*, uint8_t*)
@@ -132,7 +124,7 @@ void ethInitDefault(wiz_NetInfo* info)
 void setSockIntCallbacks(uint8_t sn,
       void (*send_ok)(uint8_t sn, uint16_t len),
       void (*timeout)(uint8_t sn, uint8_t discon),
-      void (*recv)(uint8_t sn),
+      void (*recv)(uint8_t sn, uint16_t len),
       void (*discon)(uint8_t sn),
       void (*con)(uint8_t sn))
 {
@@ -210,7 +202,6 @@ void setSockIntErrCallbacks(uint8_t sn,
       void (*ethfault)(uint8_t sn))
 {
    sock_int_err_cb[sn].ethfault = ethfault;
-
 }
 
 /**
@@ -246,6 +237,7 @@ void setTCPto(uint16_t rtr, uint8_t rcr)
  */
 void enableKeepAliveAuto(uint8_t sn, uint8_t val)
 {
+   //setSn_CR(sn, Sn_CR_SEND_KEEP);
    setSn_KPALVTR(sn, val);
 }
 
@@ -276,6 +268,7 @@ void sockDataHandler(uint8_t sn)
 
    eth_flag = 0;
 
+   // interrrupt ayrıştırılması BEGIN
    uint8_t snir = getSn_IR(sn);
    uint8_t ir = getIR();
    sock_int_status_t sock_int_status;
@@ -287,7 +280,12 @@ void sockDataHandler(uint8_t sn)
    sock_int_status.con = !!(snir & Sn_IR_CON);
    eth_int_status.conflict = !!(ir & IR_CONFLICT);
    eth_int_status.unreach = !!(ir & IR_UNREACH);
+   eth_int_status.PPPoe = !!(ir & IR_PPPoE);
+   eth_int_status.mp = !!(ir & IR_MP);
 
+   // interrrupt ayrıştırılması END
+
+   // ayrıştırılma sonucunun değerlendirilmesi BEGIN
    if(sock_int_status.con)
    {
       setSn_IR(sn, Sn_IR_CON);
@@ -324,13 +322,12 @@ void sockDataHandler(uint8_t sn)
    else if(sock_int_status.recv)
    {
       setSn_IR(sn, Sn_IR_RECV);
-      sock_int_status_cb[sn].recv(sn);
+      sock_int_status_cb[sn].recv(sn, getSn_RX_RSR(sn));
    }
    else if(sock_int_status.send_ok)
    {
       setSn_IR(sn, Sn_IR_SENDOK);
-      uint16_t len = getSn_TxMAX(sn) - getSn_TX_FSR(sn);
-      sock_int_status_cb[sn].send_ok(sn, len);
+      sock_int_status_cb[sn].send_ok(sn, getSn_TxMAX(sn) - getSn_TX_FSR(sn));
    }
    else if(eth_int_status.conflict)
    {
@@ -352,6 +349,7 @@ void sockDataHandler(uint8_t sn)
       setIR(IR_MP);
       eth_int_status_cb.mp();
    }
+   // ayrıştırılma sonucunun değerlendirilmesi END
 
 }
 
@@ -372,7 +370,8 @@ void ethIntAsserted(void)
  */
 void ethObserver(uint8_t sn)
 {
-   edgeDetection(&ed_obj[ED_0], !(getPHYCFGR() & PHYCFGR_LNK_ON)) && (eth_int_err_cb.linkoff(), 0);
+   edgeDetection(&ed_obj[ED_LINKOFF], !(getPHYCFGR() & PHYCFGR_LNK_ON)) && (eth_int_err_cb.linkoff(), 0);
+
 
    if(sock_cmd[sn].connect)
    {
@@ -381,11 +380,5 @@ void ethObserver(uint8_t sn)
          sock_cmd[sn].connect = 0;
       }
    }
-
-
 }
-
-
-
-
 

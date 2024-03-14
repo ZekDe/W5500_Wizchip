@@ -23,7 +23,7 @@ void ethInitDefault(wiz_NetInfo *info);
 void setSockIntCallbacks(uint8_t sn,
       void (*send_ok)(uint8_t sn, uint16_t len),
       void (*timeout)(uint8_t sn, uint8_t discon),
-      void (*recv)(uint8_t sn),
+      void (*recv)(uint8_t sn, uint16_t len),
       void (*discon)(uint8_t sn),
       void (*con)(uint8_t sn));
 void setEthIntCallbacks(
