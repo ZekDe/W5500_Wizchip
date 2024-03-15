@@ -36,6 +36,7 @@
 #include "macro.h"
 
 #include "../../Drivers/Internet/inc/dhcp.h"
+#include "../../Drivers/Internet/inc/dns.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -90,6 +91,8 @@ typedef struct
    uint8_t sn;
    uint8_t destip[4];
    uint8_t dhcp_buf[1024];
+   uint8_t dns_buf[1024];
+   uint8_t domain_ip[4];
 } app_data_t;
 
 app_data_t app_net_data =
@@ -100,6 +103,7 @@ app_data_t app_net_data =
       .ip = {192, 168, 1, 99},// IP address
       .sn = {255, 255, 255, 0},// Subnet mask
       .gw = {192, 168, 1, 1},// Gateway address
+      .dhcp = NETINFO_DHCP,
    },
    .port = 8080,
    .sn = 0,
@@ -147,6 +151,7 @@ static void doConflict(void);
 static void doUnreach(void);
 
 static void DHCP_Perform(void);
+static void DNS_Perform(void);
 
 static void periodicTimer(void);
 
@@ -220,11 +225,9 @@ int main(void)
    timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
 
    while (!scan("%s", cmd));
-
    print("%s\n", cmd);
    CLEAR_STRUCT(cmd);
 
-   printInfo();
    print("CHIP-VERSION: %d\n"
          "INTLEVEL: %d\n"
          "IMR: %X\n"
@@ -238,12 +241,21 @@ int main(void)
          getSn_RXBUF_SIZE(0),
          getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
 
+
    timerStart(&timer_obj[TIMER_0]);
 
    steadyClockEnable();
-
+   print("\n=====DHCP-DNS Demo=====\n");
+   printInfo();
    DHCP_Perform();
+   DNS_Perform();
+   printInfo();
 
+   print("Google ip:  %d.%d.%d.%d\r\n",
+         app_net_data.domain_ip[0],
+         app_net_data.domain_ip[1],
+         app_net_data.domain_ip[2],
+         app_net_data.domain_ip[3]);
 
    /* USER CODE END 2 */
 
@@ -253,7 +265,7 @@ int main(void)
    while (1)
    {
       sockDataHandler(app_net_data.sn);
-
+      timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
 
       if(*cmd)
          CLEAR_STRUCT(cmd);
@@ -327,7 +339,7 @@ int main(void)
          send(0, (uint8_t*)"close", 5);
       }
 
-      //timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
+
       /* USER CODE END WHILE */
 
       /* USER CODE BEGIN 3 */
@@ -629,8 +641,20 @@ static void DHCP_Perform(void)
    getGWfromDHCP(app_net_data.net_info.gw);
    getSNfromDHCP(app_net_data.net_info.sn);
    getDNSfromDHCP(app_net_data.net_info.dns);
-   printInfo();
 }
+
+static void DNS_Perform(void)
+{
+   print("DNS START\n");
+   DNS_init(app_net_data.sn, app_net_data.dns_buf);
+   if (!DNS_run(app_net_data.net_info.dns, (uint8_t*)"www.google.com", app_net_data.domain_ip))
+   {
+      print("DNS unsuccessful!\n");
+      return;
+   }
+   print("DNS successful\n");
+}
+
 static void periodicTimer(void)
 {
    ethObserver(app_net_data.sn);

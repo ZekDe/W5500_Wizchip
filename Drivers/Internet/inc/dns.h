@@ -65,7 +65,7 @@ extern "C" {
 #define	MAX_DNS_BUF_SIZE	256		///< maximum size of DNS buffer. */
 /*
  * @brief Maxium length of your queried Domain name 
- * @todo SHOULD BE defined it equal as or greater than your Domain name lenght + null character(1)
+ * @todo SHOULD BE defined it equal as or greater than your Domain name length + null character(1)
  * @note SHOULD BE careful to stack overflow because it is allocated 1.5 times as MAX_DOMAIN_NAME in stack.
  */
 #define  MAX_DOMAIN_NAME   128       // for example "www.google.com"
@@ -75,7 +75,7 @@ extern "C" {
 
 #define	IPPORT_DOMAIN     53       ///< DNS server port number
 
-#define DNS_MSG_ID         0x1122   ///< ID for DNS message. You can be modifyed it any number
+#define DNS_MSG_ID         0x1122   ///< ID for DNS message. You can modify it any number
 /*
  * @brief DNS process initialize
  * @param s   : Socket number for DNS
@@ -87,12 +87,12 @@ void DNS_init(uint8_t s, uint8_t * buf);
  * @brief DNS process
  * @details Send DNS query and receive DNS response
  * @param dns_ip        : DNS server ip
- * @param name          : Domain name to be queryed
+ * @param name          : Domain name to be queried
  * @param ip_from_dns   : IP address from DNS server
  * @return  -1 : failed. @ref MAX_DOMIN_NAME is too small \n
  *           0 : failed  (Timeout or Parse error)\n
  *           1 : success
- * @note This funtion blocks until success or fail. max time = @ref MAX_DNS_RETRY * @ref DNS_WAIT_TIME
+ * @note This function blocks until success or fail. max time = @ref MAX_DNS_RETRY * @ref DNS_WAIT_TIME
  */
 int8_t DNS_run(uint8_t * dns_ip, uint8_t * name, uint8_t * ip_from_dns);
 

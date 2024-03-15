@@ -197,6 +197,7 @@ void SysTick_Handler(void)
    if(ticks++ == 1000)
    {
       DHCP_time_handler();
+      DNS_time_handler();
       ticks = 0;
    }
   /* USER CODE END SysTick_IRQn 1 */
