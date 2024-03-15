@@ -9,7 +9,7 @@
 #include "macro.h"
 #include "edge_detection.h"
 #include "main.h" // for tick
-
+#include "../../Internet/inc/dhcp.h"
 
 typedef struct
 {
@@ -80,6 +80,8 @@ static eth_int_err_cb_t eth_int_err_cb;
 static volatile uint8_t eth_flag;
 
 static edge_detection_t ed_obj[ED_END];
+
+uint32_t arpto;
 
 /**
  * \fn void ethInit(wiz_NetInfo*, uint8_t*, uint8_t*)
@@ -226,7 +228,9 @@ void setTCPto(uint16_t rtr, uint8_t rcr)
 {
    setRTR(rtr);
    setRCR(rcr);
+   arpto = rtr * 0.1 * (rcr+1);
 }
+
 
 
 /**

@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "socket_utils.h"
+#include "../../Drivers/Internet/inc/dhcp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -192,6 +193,12 @@ void SysTick_Handler(void)
   HAL_IncTick();
   /* USER CODE BEGIN SysTick_IRQn 1 */
 
+   static uint16_t ticks = 0;
+   if(ticks++ == 1000)
+   {
+      DHCP_time_handler();
+      ticks = 0;
+   }
   /* USER CODE END SysTick_IRQn 1 */
 }
 

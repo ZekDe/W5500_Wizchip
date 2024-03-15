@@ -99,7 +99,7 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
    case SOCK_ESTABLISHED:
       if(getSn_IR(sn) & Sn_IR_CON)// Socket n interrupt register mask; TCP CON interrupt = connection with peer is successful
       {
-         print("%d:Connected to - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
+         //print("%d:Connected to - %d.%d.%d.%d : %d\r\n",sn, destip[0], destip[1], destip[2], destip[3], destport);
          setSn_IR(sn, Sn_IR_CON);// this interrupt should be write the bit cleared to '1'
       }
 
@@ -132,11 +132,11 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
    case SOCK_CLOSE_WAIT:
       if((ret = disconnect(sn)) != SOCK_OK)
          return ret;
-      print("%d:Socket Closed\r\n", sn);
+     // print("%d:Socket Closed\r\n", sn);
    break;
 
    case SOCK_INIT:
-      print("%d:Try to connect to the %d.%d.%d.%d : %d\r\n", sn, destip[0], destip[1], destip[2], destip[3], destport);
+      //print("%d:Try to connect to the %d.%d.%d.%d : %d\r\n", sn, destip[0], destip[1], destip[2], destip[3], destport);
       if((ret = connect(sn, destip, destport)) != SOCK_OK)
          return ret;//	Try to TCP connect to the TCP server (destination)
    break;
@@ -149,7 +149,7 @@ int32_t loopback_tcpc(uint8_t sn, uint8_t *buf, uint8_t *destip, uint16_t destpo
             any_port = 50000;
          return ret;// TCP socket open with 'any_port' port number
       }
-      printf("%d:Socket opened\r\n",sn);
+      //printf("%d:Socket opened\r\n",sn);
    break;
    default:
    break;

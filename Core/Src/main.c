@@ -34,6 +34,8 @@
 #include "retarget.h"
 #include "steady_clock.h"
 #include "macro.h"
+
+#include "../../Drivers/Internet/inc/dhcp.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,12 +43,13 @@
 
 enum
 {
-   TON_0_DURATION = 100,
+   TON_0_DURATION = 5000,
 };
 
 enum
 {
-   TON_0 = 0, TON_END,
+   TON_0 = 0,
+   TON_END,
 };
 
 enum
@@ -56,7 +59,8 @@ enum
 
 enum
 {
-   TIMER_0 = 0, TIMER_END,
+   TIMER_0 = 0,
+   TIMER_END,
 };
 
 /* USER CODE END PTD */
@@ -85,37 +89,40 @@ typedef struct
    uint16_t destport;
    uint8_t sn;
    uint8_t destip[4];
+   uint8_t dhcp_buf[1024];
 } app_data_t;
-
-//app_data_t app_net_data =
-//{
-//  .net_info =
-//  {
-//      .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
-//      .ip = {192, 168, 1, 99},// IP address
-//      .sn = {255, 255, 255, 0},// Subnet mask
-//      .gw = {192, 168, 1, 1}// Gateway address
-//   },
-//   .port = 8080,
-//   .sn = 0,
-//   .destport = 50000,
-//   .destip = {192, 168, 1, 38}, };
 
 app_data_t app_net_data =
 {
   .net_info =
   {
       .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
-      .ip = {10, 60, 3, 99},// IP address
-      .sn = {255, 0, 0, 0},// Subnet mask
-      .gw = {10, 60, 3, 1}// Gateway address
+      .ip = {192, 168, 1, 99},// IP address
+      .sn = {255, 255, 255, 0},// Subnet mask
+      .gw = {192, 168, 1, 1},// Gateway address
    },
    .port = 8080,
    .sn = 0,
    .destport = 50000,
-   .destip = {10, 60, 3, 20}, };
+   .destip = {192, 168, 1, 34}, };
+
+//app_data_t app_net_data =
+//{
+//  .net_info =
+//  {
+//      .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
+//      .ip = {10, 60, 3, 99},// IP address
+//      .sn = {255, 0, 0, 0},// Subnet mask
+//      .gw = {10, 60, 3, 1}// Gateway address
+//   },
+//   .port = 8080,
+//   .sn = 0,
+//   .destport = 50000,
+//   .destip = {10, 60, 3, 20},
+//};
 
 static soft_timer_t timer_obj[TIMER_END];
+static ton_t ton_obj[TON_END];
 
 volatile static uint8_t spi_rx_done;
 volatile static uint8_t spi_tx_done;
@@ -138,6 +145,8 @@ static void doEthfault(uint8_t sn);
 static void doLinkOff(void);
 static void doConflict(void);
 static void doUnreach(void);
+
+static void DHCP_Perform(void);
 
 static void periodicTimer(void);
 
@@ -208,8 +217,7 @@ int main(void)
    setSockIntErrCallbacks(app_net_data.sn, doEthfault);
    setEthIntErrCallbacks(doLinkOff);
 
-
-   //timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
+   timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
 
    while (!scan("%s", cmd));
 
@@ -230,9 +238,12 @@ int main(void)
          getSn_RXBUF_SIZE(0),
          getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
 
-   //timerStart(&timer_obj[TIMER_0]);
+   timerStart(&timer_obj[TIMER_0]);
 
    steadyClockEnable();
+
+   DHCP_Perform();
+
 
    /* USER CODE END 2 */
 
@@ -242,7 +253,7 @@ int main(void)
    while (1)
    {
       sockDataHandler(app_net_data.sn);
-      periodicTimer();
+
 
       if(*cmd)
          CLEAR_STRUCT(cmd);
@@ -252,9 +263,11 @@ int main(void)
       if(!strcmp("socket", (char*)cmd))
       {
          first = getusec();
-         if(socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00) != app_net_data.sn)
+         int8_t sockret;
+         if((sockret = socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00)) != app_net_data.sn)
          {
-            print("socket %d cannot open\r\n", app_net_data.sn);
+            print("socket %d cannot open\r\n"
+                  "sockret: %d\n", app_net_data.sn, sockret);
          }
          second = getusec();
          print("socket duration: %d\n",second - first);
@@ -508,6 +521,8 @@ void printInfo(void)
          app_net_data.net_info.sn[3]);
    print("GATEWAY:     %d.%d.%d.%d\r\n", app_net_data.net_info.gw[0], app_net_data.net_info.gw[1], app_net_data.net_info.gw[2],
          app_net_data.net_info.gw[3]);
+   print("DNS ADDRESS: %d.%d.%d.%d\r\n", app_net_data.net_info.dns[0], app_net_data.net_info.dns[1], app_net_data.net_info.dns[2],
+            app_net_data.net_info.dns[3]);
    print("MAC ADDRESS: %x:%x:%x:%x:%x:%x\r\n", app_net_data.net_info.mac[0], app_net_data.net_info.mac[1], app_net_data.net_info.mac[2],
          app_net_data.net_info.mac[3], app_net_data.net_info.mac[4], app_net_data.net_info.mac[5]);
    print("---------------------\n");
@@ -585,10 +600,42 @@ static void doUnreach(void)
    print("unreach!\n");
 }
 
+static void DHCP_Perform(void)
+{
+   // DHCP Area
+   print("DHCP START\n");
+   reg_dhcp_cbfunc(NULL, NULL, NULL);
+   DHCP_init(app_net_data.sn, app_net_data.dhcp_buf);
+
+   uint8_t dhcpret;
+   while((dhcpret = DHCP_run()) == DHCP_RUNNING); // sonsuz döngü değil
+
+   if(dhcpret == DHCP_IP_LEASED)
+   {
+      print("DHCP Successful\n");
+   }
+   else if(dhcpret == DHCP_FAILED)
+   {
+      // ayrıca failed timeout sonucu da oluşur(5 sn ayarladım)
+      print("DHCP Failed!\n");
+   }
+
+   // at this point, socket is in UDP mode and open, it has been closed
+   if(close(app_net_data.sn) != SOCK_OK)
+      print("socket cannot close!\n");
+
+   // load the net info
+   getIPfromDHCP(app_net_data.net_info.ip);
+   getGWfromDHCP(app_net_data.net_info.gw);
+   getSNfromDHCP(app_net_data.net_info.sn);
+   getDNSfromDHCP(app_net_data.net_info.dns);
+   printInfo();
+}
 static void periodicTimer(void)
 {
    ethObserver(app_net_data.sn);
 }
+
 void cs_sel(void)
 {
    HAL_GPIO_WritePin(ETH_CS_GPIO_Port, ETH_CS_Pin, GPIO_PIN_RESET);//CS LOW

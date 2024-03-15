@@ -57,6 +57,7 @@
 #include "ton.h"
 #include "retarget.h"//todo: debug için burada kaldırılacak
 #include "steady_clock.h"
+#include "main.h" //tick elde etmek için
 //M20150401 : Typing Error
 //#define SOCK_ANY_PORT_NUM  0xC000;
 #define SOCK_ANY_PORT_NUM  0xC000
@@ -75,6 +76,7 @@ uint8_t sock_pack_info[_WIZCHIP_SOCK_NUM_] =
 
 
 sock_cmd_t sock_cmd[8];
+extern uint32_t arpto;
 
 
 #define CHECK_SOCKNUM()   \
@@ -389,7 +391,6 @@ int32_t send(uint8_t sn, uint8_t *buf, uint16_t len)
        */
       if(TON(&ton_obj[TON_0], 1, getTick(), TON_0_DURATION))
       {
-         //TON_0_DURATION süresi dolduğunda çık, aşağıdaki bağlantı durumunun önemi yok
          TON(&ton_obj[TON_0], 0, 0, 0);
          return SOCKERR_DEVICE;
       }
@@ -502,45 +503,44 @@ int32_t sendto(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t p
    {
    case Sn_MR_UDP:
    case Sn_MR_MACRAW:
-//         break;
-//   #if ( _WIZCHIP_ < 5200 )
    case Sn_MR_IPRAW:
    break;
-//   #endif
+
    default:
       return SOCKERR_SOCKMODE;
    }
    CHECK_SOCKDATA();
-//M20140501 : For avoiding fatal error on memory align mismatched
-//if(*((uint32_t*)addr) == 0) return SOCKERR_IPINVALID;
-//{
-//uint32_t taddr;
+
    taddr = ((uint32_t)addr[0]) & 0x000000FF;
    taddr = (taddr << 8) + ((uint32_t)addr[1] & 0x000000FF);
    taddr = (taddr << 8) + ((uint32_t)addr[2] & 0x000000FF);
    taddr = (taddr << 8) + ((uint32_t)addr[3] & 0x000000FF);
-//}
-//
-//if(*((uint32_t*)addr) == 0) return SOCKERR_IPINVALID;
+
    if((taddr == 0) && ((getSn_MR(sn) & Sn_MR_MACRAW) != Sn_MR_MACRAW))
       return SOCKERR_IPINVALID;
+
    if((port == 0) && ((getSn_MR(sn) & Sn_MR_MACRAW) != Sn_MR_MACRAW))
       return SOCKERR_PORTZERO;
+
    tmp = getSn_SR(sn);
-//#if ( _WIZCHIP_ < 5200 )
+
    if((tmp != SOCK_MACRAW) && (tmp != SOCK_UDP) && (tmp != SOCK_IPRAW))
       return SOCKERR_SOCKSTATUS;
-//#else
-//   if(tmp != SOCK_MACRAW && tmp != SOCK_UDP) return SOCKERR_SOCKSTATUS;
-//#endif
 
    setSn_DIPR(sn, addr);
    setSn_DPORT(sn, port);
    freesize = getSn_TxMAX(sn);
    if(len > freesize)
       len = freesize;// check size not to exceed MAX size.
+
    while (1)
    {
+      if(TON(&ton_obj[TON_0], 1, getTick(), TON_0_DURATION))
+      {
+         TON(&ton_obj[TON_0], 0, 0, 0);
+         return SOCKERR_DEVICE;
+      }
+
       freesize = getSn_TX_FSR(sn);
       if(getSn_SR(sn) == SOCK_CLOSED)
          return SOCKERR_SOCKCLOSED;
@@ -549,33 +549,46 @@ int32_t sendto(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t p
       if(len <= freesize)
          break;
    };
+   TON(&ton_obj[TON_0], 0, 0, 0);
    wiz_send_data(sn, buf, len);
 
    setSn_CR(sn, Sn_CR_SEND);
    /* wait to process the command... */
-   while (getSn_CR(sn));
+   uint8_t is_ok;
+   while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
+   if(is_ok)
+   {
+      TON(&ton_obj[TON_0], 0, 0, 0);
+      return SOCKERR_DEVICE;
+   }
+
+   // send_ok TON_0_DURATION ms de olmazsa SOCKERR_TIMEOUT ile çık
+   // ayarlanmış süreye ilişkin timeout interrupt'ı gelebilir
    while (1)
    {
+
+      // This is fuse to prevent the blocking at this point
+      if(TON(&ton_obj[TON_0], 1, getTick(), arpto + 300))
+      {
+         TON(&ton_obj[TON_0], 0, 0, 0);
+         return SOCKERR_DEVICE;
+      }
+
       tmp = getSn_IR(sn);
       if(tmp & Sn_IR_SENDOK)
       {
          setSn_IR(sn, Sn_IR_SENDOK);
          break;
       }
-//M:20131104
-//else if(tmp & Sn_IR_TIMEOUT) return SOCKERR_TIMEOUT;
+
+      // DHCP başarılı olması için bu ARPto timeout gerçekleşmek zorunda.
       else if(tmp & Sn_IR_TIMEOUT)
       {
          setSn_IR(sn, Sn_IR_TIMEOUT);
-//M20150409 : Fixed the lost of sign bits by type casting.
-//len = (uint16_t)SOCKERR_TIMEOUT;
-//break;
          return SOCKERR_TIMEOUT;
       }
-////////////
    }
-//M20150409 : Explicit Type Casting
-//return len;
+
    return (int32_t)len;
 }
 
@@ -584,10 +597,9 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
    uint8_t mr;
    uint8_t head[8];
    uint16_t pack_len = 0;
+   uint8_t is_ok;
 
    CHECK_SOCKNUM();
-//CHECK_SOCKMODE(Sn_MR_UDP);
-//A20150601
 
    switch((mr = getSn_MR(sn)) & 0x0F)
    {
@@ -603,6 +615,12 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
    {
       while (1)
       {
+         if(TON(&ton_obj[TON_0], 1, getTick(), TON_0_DURATION))
+         {
+            TON(&ton_obj[TON_0], 0, 0, 0);
+            return SOCKERR_DEVICE;
+         }
+
          pack_len = getSn_RX_RSR(sn);
          if(getSn_SR(sn) == SOCK_CLOSED)
             return SOCKERR_SOCKCLOSED;
@@ -610,10 +628,10 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
             return SOCK_BUSY;
          if(pack_len != 0)
             break;
-      };
+      }
+      TON(&ton_obj[TON_0], 0, 0, 0);
    }
-//D20150601 : Move it to bottom
-// sock_pack_info[sn] = PACK_COMPLETED;
+
    switch(mr & 0x07)
    {
    case Sn_MR_UDP:
@@ -621,9 +639,13 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
       {
          wiz_recv_data(sn, head, 8);
          setSn_CR(sn, Sn_CR_RECV);
-         while (getSn_CR(sn));
-// read peer's IP address, port number & packet length
-//A20150601 : For W5300
+         while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
+         if(is_ok)
+         {
+            TON(&ton_obj[TON_0], 0, 0, 0);
+            return SOCKERR_DEVICE;
+         }
+
          addr[0] = head[0];
          addr[1] = head[1];
          addr[2] = head[2];
@@ -638,11 +660,9 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
          pack_len = len;
       else
          pack_len = sock_remained_size[sn];
-//A20150601 : For W5300
+
       len = pack_len;
-//
-// Need to packet length check (default 1472)
-//
+
       wiz_recv_data(sn, buf, pack_len);// data copy.
    break;
    case Sn_MR_MACRAW:
@@ -650,7 +670,12 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
       {
          wiz_recv_data(sn, head, 2);
          setSn_CR(sn, Sn_CR_RECV);
-         while (getSn_CR(sn));
+         while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
+         if(is_ok)
+         {
+            TON(&ton_obj[TON_0], 0, 0, 0);
+            return SOCKERR_DEVICE;
+         }
 // read peer's IP address, port number & packet length
          sock_remained_size[sn] = head[0];
          sock_remained_size[sn] = (sock_remained_size[sn] << 8) + head[1] - 2;
@@ -667,20 +692,22 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
          pack_len = sock_remained_size[sn];
       wiz_recv_data(sn, buf, pack_len);
    break;
-//#if ( _WIZCHIP_ < 5200 )
    case Sn_MR_IPRAW:
       if(sock_remained_size[sn] == 0)
       {
          wiz_recv_data(sn, head, 6);
          setSn_CR(sn, Sn_CR_RECV);
-         while (getSn_CR(sn));
+         while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
+         if(is_ok)
+         {
+            TON(&ton_obj[TON_0], 0, 0, 0);
+            return SOCKERR_DEVICE;
+         }
          addr[0] = head[0];
          addr[1] = head[1];
          addr[2] = head[2];
          addr[3] = head[3];
          sock_remained_size[sn] = head[4];
-//M20150401 : For Typing Error
-//sock_remaiend_size[sn] = (sock_remained_size[sn] << 8) + head[5];
          sock_remained_size[sn] = (sock_remained_size[sn] << 8) + head[5];
          sock_pack_info[sn] = PACK_FIRST;
       }
@@ -701,19 +728,21 @@ int32_t recvfrom(uint8_t sn, uint8_t *buf, uint16_t len, uint8_t *addr, uint16_t
    }
    setSn_CR(sn, Sn_CR_RECV);
    /* wait to process the command... */
-   while (getSn_CR(sn));
+   while (!TON(&ton_obj[TON_0], is_ok = getSn_CR(sn), getTick(), TON_0_DURATION) && is_ok);
+   if(is_ok)
+   {
+      TON(&ton_obj[TON_0], 0, 0, 0);
+      return SOCKERR_DEVICE;
+   }
    sock_remained_size[sn] -= pack_len;
-//M20150601 :
-//if(sock_remained_size[sn] != 0) sock_pack_info[sn] |= 0x01;
+
    if(sock_remained_size[sn] != 0)
    {
       sock_pack_info[sn] |= PACK_REMAINED;
    }
    else
       sock_pack_info[sn] = PACK_COMPLETED;
-//
-//M20150409 : Explicit Type Casting
-//return pack_len;
+
    return (int32_t)pack_len;
 }
 
