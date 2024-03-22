@@ -38,6 +38,7 @@ void enableKeepAliveAuto(uint8_t sn, uint8_t val);
 int8_t isConnected(uint8_t sn);
 int8_t isClosed(uint8_t sn);
 int8_t isOpened(uint8_t sn);
+uint8_t isLinkOn(void);
 void sockDataHandler(uint8_t sn);
 void ethIntAsserted(void);
 void ethObserver(uint8_t sn);

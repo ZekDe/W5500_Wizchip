@@ -259,6 +259,11 @@ int8_t isOpened(uint8_t sn)
 {
    return getSn_SR(sn) == SOCK_INIT;
 }
+
+uint8_t isLinkOn(void)
+{
+   return !!(getPHYCFGR() & PHYCFGR_LNK_ON);
+}
 /**
  * \fn void sockDataHandler(uint8_t)
  * \brief call it periodically
@@ -354,7 +359,6 @@ void sockDataHandler(uint8_t sn)
       eth_int_status_cb.mp();
    }
    // ayrıştırılma sonucunun değerlendirilmesi END
-
 }
 
 /**
@@ -375,7 +379,6 @@ void ethIntAsserted(void)
 void ethObserver(uint8_t sn)
 {
    edgeDetection(&ed_obj[ED_LINKOFF], !(getPHYCFGR() & PHYCFGR_LNK_ON)) && (eth_int_err_cb.linkoff(), 0);
-
 
    if(sock_cmd[sn].connect)
    {

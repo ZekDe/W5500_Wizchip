@@ -218,8 +218,7 @@ int8_t  listen(uint8_t sn);
  *                @ref SOCKERR_SOCKINIT  - Socket is not initialized\n
  *                @ref SOCKERR_IPINVALID - Wrong server IP address\n
  *                @ref SOCKERR_PORTZERO  - Server port zero\n
- *                @ref SOCKERR_TIMEOUT   - Timeout occurred during request connection\n
- *                @ref SOCK_BUSY         - In non-block io mode, it returned immediately\n
+ *                @ref SOCKERR_DEVICE   - chip problem\n
  */
 int8_t  connect(uint8_t sn, uint8_t * addr, uint16_t port);
 
@@ -237,6 +236,7 @@ int8_t  connect(uint8_t sn, uint8_t * addr, uint16_t port);
  *                        @ref SOCKERR_SOCKMODE - Invalid operation in the socket \n
  *                        @ref SOCKERR_TIMEOUT  - Timeout occurred \n
  *                        @ref SOCK_BUSY        - Socket is busy.
+ *                        @ref SOCKERR_DEVICE   - chip problem\n
  */
 int8_t  disconnect(uint8_t sn);
 

@@ -34,6 +34,7 @@
 #include "retarget.h"
 #include "steady_clock.h"
 #include "macro.h"
+#include "edge_detection.h"
 
 #include "../../Drivers/Internet/inc/dhcp.h"
 #include "../../Drivers/Internet/inc/dns.h"
@@ -44,13 +45,23 @@
 
 enum
 {
-   TON_0_DURATION = 5000,
+   TON_0_DURATION = 1000,
+   TON_1_DURATION = 1000,
 };
 
 enum
 {
    TON_0 = 0,
+   TON_1,
    TON_END,
+};
+
+enum
+{
+   ED_0 = 0,
+   ED_1,
+   ED_2,
+   ED_END,
 };
 
 enum
@@ -95,6 +106,25 @@ typedef struct
    uint8_t domain_ip[4];
 } app_data_t;
 
+typedef enum
+{
+   SOCKET_INFO = 0,
+   SOCKET_CLOSED,
+   SOCKET_INIT,
+   SOCKET_WAIT_CONNECTED,
+   SOCKET_CONNECTED,
+   SOCKET_TIMEOUT,
+   SOCKET_TIMEOUT_CON,
+   SOCKET_TIMEOUT_DISCON,
+}socket_op_t;
+
+typedef struct
+{
+   uint32_t socket_cannot_open: 1;
+   uint32_t socket_opened: 1;
+   uint32_t socket_cannot_connect: 1;
+}eth_handler_info_t;
+
 app_data_t app_net_data =
 {
   .net_info =
@@ -108,25 +138,19 @@ app_data_t app_net_data =
    .port = 8080,
    .sn = 0,
    .destport = 50000,
-   .destip = {192, 168, 1, 34}, };
+   .destip = {192, 168, 1, 37},
+};
 
-//app_data_t app_net_data =
-//{
-//  .net_info =
-//  {
-//      .mac = {0x00, 0x08, 0xdc, 0xab, 0xcd, 0xef},// Mac address
-//      .ip = {10, 60, 3, 99},// IP address
-//      .sn = {255, 0, 0, 0},// Subnet mask
-//      .gw = {10, 60, 3, 1}// Gateway address
-//   },
-//   .port = 8080,
-//   .sn = 0,
-//   .destport = 50000,
-//   .destip = {10, 60, 3, 20},
-//};
+
+eth_handler_info_t eth_handler_info;
+socket_op_t op = 0;
+int8_t sockret = 0;
+int8_t connectret = 0;
+
 
 static soft_timer_t timer_obj[TIMER_END];
 static ton_t ton_obj[TON_END];
+static edge_detection_t ed_obj[ED_END];
 
 volatile static uint8_t spi_rx_done;
 volatile static uint8_t spi_tx_done;
@@ -161,6 +185,9 @@ static void spi_rb_burst(uint8_t *rbuf, uint16_t len);
 static void spi_wb_burst(uint8_t *tbuf, uint16_t len);
 static void spi_rb_burst_dma(uint8_t *rbuf, uint16_t len);
 static void spi_wb_burst_dma(uint8_t *tbuf, uint16_t len);
+
+static void ethHandler(void);
+static void ethHandlerInfo(void);
 
 uint8_t buf[16384] =
 {0};
@@ -211,7 +238,6 @@ int main(void)
    HAL_Delay(10);
    HAL_GPIO_WritePin(ETH_RST_GPIO_Port, ETH_RST_Pin, GPIO_PIN_SET);
    HAL_Delay(10);
-
    reg_wizchip_cs_cbfunc(cs_sel, cs_desel);
    reg_wizchip_spiburst_cbfunc(spi_rb_burst_dma, spi_wb_burst_dma);
 
@@ -221,6 +247,7 @@ int main(void)
    setSockIntCallbacks(app_net_data.sn, doSendOk, doTimeout, doRecv, doDiscon, doCon);
    setSockIntErrCallbacks(app_net_data.sn, doEthfault);
    setEthIntErrCallbacks(doLinkOff);
+
 
    timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
 
@@ -265,79 +292,83 @@ int main(void)
    while (1)
    {
       sockDataHandler(app_net_data.sn);
+      ethHandler();
+      ethHandlerInfo();
       timerCheck(&timer_obj[TIMER_0], HAL_GetTick());
 
-      if(*cmd)
-         CLEAR_STRUCT(cmd);
 
-      getline((char*)cmd);
-
-      if(!strcmp("socket", (char*)cmd))
-      {
-         first = getusec();
-         int8_t sockret;
-         if((sockret = socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00)) != app_net_data.sn)
-         {
-            print("socket %d cannot open\r\n"
-                  "sockret: %d\n", app_net_data.sn, sockret);
-         }
-         second = getusec();
-         print("socket duration: %d\n",second - first);
-         enableKeepAliveAuto(app_net_data.sn, 2);
-         print("Socket %d opened\r\n", app_net_data.sn);
-
-      }
-      else if(!strcmp("listen", (char*)cmd))
-      {
-         first = getusec();
-         if(listen(app_net_data.sn) != SOCK_OK)
-         {
-            print("socket %d cannot listen\n", app_net_data.sn);
-         }
-         second = getusec();
-         print("listen duration: %d\n",second - first);
-         print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
-      }
-      else if(!strcmp("connect", (char*)cmd))
-      {
-         print("Socket %d try to connect to the %d.%d.%d.%d : %d\n", app_net_data.sn, app_net_data.destip[0], app_net_data.destip[1],
-               app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
-
-         int8_t ret = 0;
-         first = getusec();
-         if((ret = connect(app_net_data.sn, app_net_data.destip, app_net_data.destport)) != SOCK_OK)
-            print("connection failed: %d\n", ret);
-         second = getusec();
-         print("connect duration: %d\n", second - first);
-      }
-      else if(!strcmp("disconnect", (char*)cmd))
-      {
-         first = getusec();
-         if(disconnect(app_net_data.sn) != SOCK_OK)
-         {
-            print("cannot disconnect properly!\n");
-         }
-         second = getusec();
-         print("disconnect duration: %d\n", second - first);
-      }
-      else if(!strcmp("send", (char*)cmd))
-      {
-         first = getusec();
-         if(send(0, (uint8_t*)"bir yazi\n", 9) < 0)
-         {
-            print("cannot send!\n");
-         }
-         second = getusec();
-         print("send duration: %d\n", second - first);
-      }
-      else if(!strcmp("16k", (char*)cmd))
-      {
-         send(0, (uint8_t*)"16k", 3);
-      }
-      else if(!strcmp("close", (char*)cmd))
-      {
-         send(0, (uint8_t*)"close", 5);
-      }
+//
+//      if(*cmd)
+//         CLEAR_STRUCT(cmd);
+//
+//      getline((char*)cmd);
+//
+//      if(!strcmp("socket", (char*)cmd))
+//      {
+//         first = getusec();
+//         int8_t sockret;
+//         if((sockret = socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00)) != app_net_data.sn)
+//         {
+//            print("socket %d cannot open\r\n"
+//                  "sockret: %d\n", app_net_data.sn, sockret);
+//         }
+//         second = getusec();
+//         print("socket duration: %d\n",second - first);
+//         enableKeepAliveAuto(app_net_data.sn, 2);
+//         print("Socket %d opened\r\n", app_net_data.sn);
+//
+//      }
+//      else if(!strcmp("listen", (char*)cmd))
+//      {
+//         first = getusec();
+//         if(listen(app_net_data.sn) != SOCK_OK)
+//         {
+//            print("socket %d cannot listen\n", app_net_data.sn);
+//         }
+//         second = getusec();
+//         print("listen duration: %d\n",second - first);
+//         print("Listen: Socket [%d], Port [%d]\r\n", app_net_data.sn, app_net_data.port);
+//      }
+//      else if(!strcmp("connect", (char*)cmd))
+//      {
+//         print("Socket %d try to connect to the %d.%d.%d.%d : %d\n", app_net_data.sn, app_net_data.destip[0], app_net_data.destip[1],
+//               app_net_data.destip[2], app_net_data.destip[3], app_net_data.destport);
+//
+//         int8_t ret = 0;
+//         first = getusec();
+//         if((ret = connect(app_net_data.sn, app_net_data.destip, app_net_data.destport)) != SOCK_OK)
+//            print("connection failed: %d\n", ret);
+//         second = getusec();
+//         print("connect duration: %d\n", second - first);
+//      }
+//      else if(!strcmp("disconnect", (char*)cmd))
+//      {
+//         first = getusec();
+//         if(disconnect(app_net_data.sn) != SOCK_OK)
+//         {
+//            print("cannot disconnect properly!\n");
+//         }
+//         second = getusec();
+//         print("disconnect duration: %d\n", second - first);
+//      }
+//      else if(!strcmp("send", (char*)cmd))
+//      {
+//         first = getusec();
+//         if(send(0, (uint8_t*)"bir yazi\n", 9) < 0)
+//         {
+//            print("cannot send!\n");
+//         }
+//         second = getusec();
+//         print("send duration: %d\n", second - first);
+//      }
+//      else if(!strcmp("16k", (char*)cmd))
+//      {
+//         send(0, (uint8_t*)"16k", 3);
+//      }
+//      else if(!strcmp("close", (char*)cmd))
+//      {
+//         send(0, (uint8_t*)"close", 5);
+//      }
 
 
       /* USER CODE END WHILE */
@@ -347,6 +378,155 @@ int main(void)
    /* USER CODE END 3 */
 }
 
+
+
+static void ethHandler(void)
+{
+   static uint8_t i = 0;
+   enum{RETRY = 5};
+
+   switch (op)
+   {
+   case SOCKET_INFO:
+      if(!isClosed(app_net_data.sn))
+         close(app_net_data.sn);
+
+      eth_handler_info.socket_opened = 0;
+      eth_handler_info.socket_cannot_open = 0;
+      eth_handler_info.socket_cannot_connect = 0;
+
+      print("CHIP-VERSION: %d\n"
+               "INTLEVEL: %d\n"
+               "IMR: %X\n"
+               "SIMR: %X\n"
+               "RTR: %d\n"
+               "RCR: %d\n"
+               "Sn_IMR: %X\n"
+               "TX Buffer: %d kb\n"
+               "RX Buffer: %d kb\n"
+               "Link Status: %s\n\n",
+               getVERSIONR(),
+               getINTLEVEL(),
+               getIMR(),
+               getSIMR(),
+               getRTR(),
+               getRCR(),
+               getSn_IMR(0),
+               getSn_TXBUF_SIZE(0),
+               getSn_RXBUF_SIZE(0),
+               getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
+
+      if(getVERSIONR() == 4)
+         op = SOCKET_CLOSED;
+
+      i = 0;
+      break;
+
+
+
+      case SOCKET_CLOSED:
+         if(TON(&ton_obj[TON_0], 1, HAL_GetTick(), TON_0_DURATION))
+         {
+            TON(&ton_obj[TON_0], 0, 0, 0);
+
+            if((sockret = socket(app_net_data.sn, Sn_MR_TCP, app_net_data.port, 0x00)) != app_net_data.sn)
+            {
+               if(sockret == SOCKERR_SOCKSTATUS)
+                  close(app_net_data.sn);
+
+               eth_handler_info.socket_cannot_open = 1;
+               eth_handler_info.socket_opened = 0;
+            }
+            else
+            {
+               op = SOCKET_INIT;
+               i = 0;
+            }
+
+            if(++i == RETRY)
+            {
+               op = SOCKET_INFO;
+               i = 0;
+            }
+         }
+         break;
+
+
+
+      case SOCKET_INIT:
+         eth_handler_info.socket_cannot_open = 0;
+         eth_handler_info.socket_opened = 1;
+
+         if(TON(&ton_obj[TON_1], 1, HAL_GetTick(), TON_1_DURATION))
+         {
+            TON(&ton_obj[TON_1], 0, 0, 0);
+
+            if((connectret = connect(app_net_data.sn, app_net_data.destip, app_net_data.destport)) != SOCK_OK)
+            {
+               eth_handler_info.socket_cannot_connect = 1;
+            }
+            else
+            {
+               // Eğer server dinlemiyorsa otomatik disconnect olur.
+               // ve doDiscon çalışır.
+               op = SOCKET_WAIT_CONNECTED;
+               i = 0;
+            }
+            if(++i == RETRY)
+            {
+               op = SOCKET_INFO;
+               i = 0;
+            }
+         }
+
+         break;
+
+
+
+      case SOCKET_WAIT_CONNECTED:
+         eth_handler_info.socket_cannot_connect = 0;
+         break;
+
+      case SOCKET_CONNECTED:
+         // veri aktarımına hazır
+
+         break;
+
+         case SOCKET_TIMEOUT:
+            op = SOCKET_INFO;
+            break;
+
+         case SOCKET_TIMEOUT_CON:
+            op = SOCKET_INFO;
+            break;
+
+         case SOCKET_TIMEOUT_DISCON:
+            op = SOCKET_INFO;
+            break;
+
+      default:
+         break;
+   }
+}
+
+void ethHandlerInfo(void)
+{
+   if(edgeDetection(&ed_obj[ED_0], eth_handler_info.socket_cannot_open))
+   {
+      print("socket %d cannot open\r\n"
+            "sockret: %d\r\n", app_net_data.sn, sockret);
+   }
+   if(edgeDetection(&ed_obj[ED_1], eth_handler_info.socket_opened))
+   {
+
+      print("socket %d opened\r\n", app_net_data.sn );
+   }
+   if(edgeDetection(&ed_obj[ED_2], eth_handler_info.socket_cannot_connect))
+   {
+      print("socket %d, connect function cannot execute!\n"
+            "connectret: %d\r\n", app_net_data.sn, connectret);
+   }
+}
 /**
  * @brief System Clock Configuration
  * @retval None
@@ -555,15 +735,19 @@ static void doTimeout(uint8_t sn, uint8_t discon)
    {
    case 0:
       strcpy(info, "timeout");
+      op = SOCKET_TIMEOUT;
    break;
    case 1:
       strcpy(info, "timeout by disconnect");
+      op = SOCKET_TIMEOUT_DISCON;
    break;
    case 2:
       strcpy(info, "timeout by connect to host");
+      op = SOCKET_TIMEOUT_CON;
    break;
    }
    print("%s\n", info);
+
 }
 
 static void doRecv(uint8_t sn, uint16_t len)
@@ -581,6 +765,7 @@ static void doRecv(uint8_t sn, uint16_t len)
 
 static void doDiscon(uint8_t sn)
 {
+   op = SOCKET_INFO;
    print("Socket %d disconnected\n", sn);
 }
 
@@ -590,6 +775,9 @@ static void doCon(uint8_t sn)
    app_net_data.destport = getSn_DPORT(sn);
    print("Socket %d:Connected - %d.%d.%d.%d : %d\r\n", sn, app_net_data.destip[0], app_net_data.destip[1], app_net_data.destip[2],
          app_net_data.destip[3], app_net_data.destport);
+
+   op = SOCKET_CONNECTED;
+
 }
 
 static void doEthfault(uint8_t sn)
