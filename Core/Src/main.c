@@ -61,6 +61,7 @@ enum
    ED_0 = 0,
    ED_1,
    ED_2,
+   ED_3,
    ED_END,
 };
 
@@ -123,6 +124,7 @@ typedef struct
    uint32_t socket_cannot_open: 1;
    uint32_t socket_opened: 1;
    uint32_t socket_cannot_connect: 1;
+   uint32_t socket_connected: 1;
 }eth_handler_info_t;
 
 app_data_t app_net_data =
@@ -394,6 +396,7 @@ static void ethHandler(void)
       eth_handler_info.socket_opened = 0;
       eth_handler_info.socket_cannot_open = 0;
       eth_handler_info.socket_cannot_connect = 0;
+      eth_handler_info.socket_connected = 0;
 
       print("CHIP-VERSION: %d\n"
                "INTLEVEL: %d\n"
@@ -464,6 +467,7 @@ static void ethHandler(void)
             if((connectret = connect(app_net_data.sn, app_net_data.destip, app_net_data.destport)) != SOCK_OK)
             {
                eth_handler_info.socket_cannot_connect = 1;
+               eth_handler_info.socket_connected = 0;
             }
             else
             {
@@ -485,6 +489,7 @@ static void ethHandler(void)
 
       case SOCKET_WAIT_CONNECTED:
          eth_handler_info.socket_cannot_connect = 0;
+         eth_handler_info.socket_connected = 1;
          break;
 
       case SOCKET_CONNECTED:
@@ -518,13 +523,16 @@ void ethHandlerInfo(void)
    }
    if(edgeDetection(&ed_obj[ED_1], eth_handler_info.socket_opened))
    {
-
       print("socket %d opened\r\n", app_net_data.sn );
    }
    if(edgeDetection(&ed_obj[ED_2], eth_handler_info.socket_cannot_connect))
    {
       print("socket %d, connect function cannot execute!\n"
             "connectret: %d\r\n", app_net_data.sn, connectret);
+   }
+   if(edgeDetection(&ed_obj[ED_3], eth_handler_info.socket_connected))
+   {
+      print("socket %d, connect executed\n", app_net_data.sn);
    }
 }
 /**
