@@ -110,6 +110,7 @@ typedef struct
 typedef enum
 {
    SOCKET_INFO = 0,
+   SOCKET_DHCP_ONGOING,
    SOCKET_CLOSED,
    SOCKET_INIT,
    SOCKET_WAIT_CONNECTED,
@@ -140,7 +141,7 @@ app_data_t app_net_data =
    .port = 8080,
    .sn = 0,
    .destport = 50000,
-   .destip = {192, 168, 1, 37},
+   .destip = {192, 168, 1, 43},
 };
 
 
@@ -176,7 +177,7 @@ static void doLinkOff(void);
 static void doConflict(void);
 static void doUnreach(void);
 
-static void DHCP_Perform(void);
+static uint8_t DHCP_Perform(void);
 static void DNS_Perform(void);
 
 static void periodicTimer(void);
@@ -249,7 +250,9 @@ int main(void)
    setSockIntCallbacks(app_net_data.sn, doSendOk, doTimeout, doRecv, doDiscon, doCon);
    setSockIntErrCallbacks(app_net_data.sn, doEthfault);
    setEthIntErrCallbacks(doLinkOff);
+   reg_dhcp_cbfunc(NULL, NULL, NULL);
 
+   DHCP_init(app_net_data.sn, app_net_data.dhcp_buf);
 
    timerSet(&timer_obj[TIMER_0], TIMER_0_DURATION, periodicTimer);
 
@@ -274,17 +277,17 @@ int main(void)
    timerStart(&timer_obj[TIMER_0]);
 
    steadyClockEnable();
-   print("\n=====DHCP-DNS Demo=====\n");
-   printInfo();
-   DHCP_Perform();
-   DNS_Perform();
-   printInfo();
+   //print("\n=====DHCP-DNS Demo=====\n");
+   //printInfo();
+   //DHCP_Perform();
+   //DNS_Perform();
+   //printInfo();
 
-   print("Google ip:  %d.%d.%d.%d\r\n",
-         app_net_data.domain_ip[0],
-         app_net_data.domain_ip[1],
-         app_net_data.domain_ip[2],
-         app_net_data.domain_ip[3]);
+//   print("Google ip:  %d.%d.%d.%d\r\n",
+//         app_net_data.domain_ip[0],
+//         app_net_data.domain_ip[1],
+//         app_net_data.domain_ip[2],
+//         app_net_data.domain_ip[3]);
 
    /* USER CODE END 2 */
 
@@ -387,6 +390,7 @@ static void ethHandler(void)
    static uint8_t i = 0;
    enum{RETRY = 5};
 
+
    switch (op)
    {
    case SOCKET_INFO:
@@ -419,15 +423,21 @@ static void ethHandler(void)
                getSn_RXBUF_SIZE(0),
                getPHYCFGR() & PHYCFGR_LNK_ON ? "ON" : "OFF");
 
+
       if(getVERSIONR() == 4)
-         op = SOCKET_CLOSED;
+         op = SOCKET_DHCP_ONGOING;
 
       i = 0;
       break;
 
+   case SOCKET_DHCP_ONGOING:
+      if(DHCP_Perform())
+         op = SOCKET_CLOSED;
+      break;
 
 
       case SOCKET_CLOSED:
+
          if(TON(&ton_obj[TON_0], 1, HAL_GetTick(), TON_0_DURATION))
          {
             TON(&ton_obj[TON_0], 0, 0, 0);
@@ -443,6 +453,7 @@ static void ethHandler(void)
             else
             {
                op = SOCKET_INIT;
+               printInfo();
                i = 0;
             }
 
@@ -808,15 +819,11 @@ static void doUnreach(void)
    print("unreach!\n");
 }
 
-static void DHCP_Perform(void)
+static uint8_t DHCP_Perform(void)
 {
-   // DHCP Area
-   print("DHCP START\n");
-   reg_dhcp_cbfunc(NULL, NULL, NULL);
-   DHCP_init(app_net_data.sn, app_net_data.dhcp_buf);
-
    uint8_t dhcpret;
-   while((dhcpret = DHCP_run()) == DHCP_RUNNING); // sonsuz döngü değil
+   if((dhcpret = DHCP_run()) == DHCP_RUNNING)
+      return 0;
 
    if(dhcpret == DHCP_IP_LEASED)
    {
@@ -828,7 +835,7 @@ static void DHCP_Perform(void)
       print("DHCP Failed!\n");
    }
 
-   // at this point, socket is in UDP mode and open, it has been closed
+   // at this point, socket is in UDP mode and opened, it has been closed
    if(close(app_net_data.sn) != SOCK_OK)
       print("socket cannot close!\n");
 
@@ -837,6 +844,8 @@ static void DHCP_Perform(void)
    getGWfromDHCP(app_net_data.net_info.gw);
    getSNfromDHCP(app_net_data.net_info.sn);
    getDNSfromDHCP(app_net_data.net_info.dns);
+
+   return 1;
 }
 
 static void DNS_Perform(void)

@@ -24,6 +24,7 @@
 /* USER CODE BEGIN Includes */
 #include "socket_utils.h"
 #include "../../Drivers/Internet/inc/dhcp.h"
+#include "../../Drivers/Internet/inc/dns.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
